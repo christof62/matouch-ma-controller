@@ -1,0 +1,11 @@
+{
+  "name": "matouch-esp32s3-rotary-128",
+  "version": "1.0.0",
+  "description": "Board definition for MaTouch ESP32-S3 RotaryIPS-Display1.28 GC9A01 (MTRO128G)",
+  "keywords": ["esp32-s3", "hardware"],
+  "url": "https://www.makerfabs.com/matouch-esp32-s3-rotaryips-display1-28-gc9a01.html",
+  "authors": [{ "name": "Makerfabs", "url": "https://www.makerfabs.com" }],
+  "frameworks": ["arduino", "espidf"],
+  "platforms": ["espressif32"],
+  "headers": ["Arduino.h"]
+}
