@@ -314,7 +314,15 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
                   obj["error"]["message"] | "unknown");
     if (_authMessageId.length() && _authMessageId == mid) {
       Serial.println("[MA] AUTH FAILED - check token!");
+      status("AUTH FAILED - check token");
       _state = MaConnState::Error;
+      if (_onEvent) _onEvent();
+    } else {
+      char m[80];
+      snprintf(m, sizeof(m), "cmd error: %s",
+               obj["error"]["error_code"].is<const char *>()
+                   ? obj["error"]["error_code"].as<const char *>() : "unknown");
+      status(m);
     }
     return;
   }
@@ -326,25 +334,19 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
 
     // auth result? ------------------------------------------------
     if (_authMessageId.length() && _authMessageId == mid) {
-      if (result.isNull() || result.is<bool>() || result.is<const char *>()) {
-        // auth returns true or a user object depending on schema
-        if (result.is<bool>() && !result.as<bool>()) {
-          Serial.println("[MA] AUTH FAILED - invalid token");
-          _state = MaConnState::Error;
-          return;
-        }
-        _authed = true;
-        _state = MaConnState::Authenticated;
-        Serial.println("[MA] authenticated OK");
-        fetchPlayers();
+      if (result.is<bool>() && !result.as<bool>()) {
+        Serial.println("[MA] AUTH FAILED - invalid token");
+        status("AUTH FAILED - token");
+        _state = MaConnState::Error;
         if (_onEvent) _onEvent();
         return;
       }
-      // user object returned = success too
-      if (result.is<JsonObjectConst>()) {
+      // true / user object / anything else non-null = success
+      if (!result.isNull()) {
         _authed = true;
         _state = MaConnState::Authenticated;
         Serial.println("[MA] authenticated OK");
+        status("auth OK -> fetch players");
         fetchPlayers();
         if (_onEvent) _onEvent();
         return;
