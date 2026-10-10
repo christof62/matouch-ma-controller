@@ -118,8 +118,11 @@ void setup() {
   touch.begin(TOUCH_SDA, TOUCH_SCL, TOUCH_RST, TOUCH_INT);
 
   pinMode(ENC_SW, INPUT_PULLUP);
-  encoder.attachHalfQuad(ENC_DT, ENC_CLK);
+  // FullQuad counts only complete detent steps -> robust against
+  // contact bounce that made the count jump/fall back to 0
+  encoder.attachFullQuad(ENC_DT, ENC_CLK);
   encoder.setCount(0);
+  encoder.setFilter(1023);  // enable hardware filter/debounce if available
 
   loadConfig();
   strlcpy(ma_port_str, String(ma_port).c_str(), sizeof(ma_port_str));
@@ -324,6 +327,10 @@ void handleInput() {
   static int64_t lastCount = 0;
   int64_t now = encoder.getCount();
   int delta = (int)(now - lastCount);
+  // clamp spikes from contact noise: ignore impossible jumps
+  if (delta > 4 || delta < -4) {
+    delta = (delta > 0) ? 2 : -2;  // treat as a single detent step
+  }
   if (delta != 0) {
     lastCount = now;
     switch (screen) {
