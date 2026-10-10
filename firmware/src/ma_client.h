@@ -31,10 +31,13 @@ enum class MaConnState { Disconnected, Connecting, Connected, Authenticated, Err
 
 // Event callback: something changed (player list, player state, queue)
 typedef std::function<void()> MaEventCallback;
+// Debug callback: first raw message from the server (for display diagnosis)
+typedef std::function<void(const char *)> MaDebugCallback;
 
 class MusicAssistantClient {
 public:
   void begin(const char *host, uint16_t port, const char *token, MaEventCallback cb);
+  void setFirstMessageCallback(MaDebugCallback cb) { _onFirstMessage = cb; }
   void loop();
   bool isConnected() const { return _state == MaConnState::Authenticated; }
   MaConnState getState() const { return _state; }
@@ -78,6 +81,7 @@ private:
   uint16_t _port;
   String _token;
   MaEventCallback _onEvent = nullptr;
+  MaDebugCallback _onFirstMessage = nullptr;
   MaConnState _state = MaConnState::Disconnected;
   uint32_t _lastConnectAttempt = 0;
   uint32_t _messageId = 0;

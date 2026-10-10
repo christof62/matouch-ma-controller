@@ -252,6 +252,14 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
     firstMsgShown = true;
     Serial.printf("[MA] first message (%d bytes): %.*s\n", (int)length,
                   (int)min((size_t)300, length), (const char *)payload);
+    // show the first bytes of the first message on the display for diagnosis
+    if (_onFirstMessage) {
+      char buf[121];
+      int n = (int)min((size_t)120, length);
+      memcpy(buf, payload, n);
+      buf[n] = '\0';
+      _onFirstMessage(buf);
+    }
   }
 
   JsonDocument doc;

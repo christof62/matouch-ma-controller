@@ -181,6 +181,29 @@ void setup() {
   drawMessage("Connecting MA...");
 
   ma.begin(ma_host, ma_port, ma_token, []() { markDirty(); });
+  ma.setFirstMessageCallback([](const char *msg) {
+    Serial.printf("[UI] first server msg: %s\n", msg);
+    // quick visual feedback on the display
+    gfx->fillScreen(BLACK);
+    gfx->setTextColor(COL_ACCENT);
+    gfx->setTextSize(1);
+    gfx->setCursor(15, 60);
+    gfx->println("Server said:");
+    gfx->setTextColor(COL_FG);
+    gfx->setCursor(15, 80);
+    // print up to 5 lines of 25 chars
+    int len = strlen(msg);
+    for (int i = 0; i < 5 && i * 25 < len; i++) {
+      char line[26];
+      int n = min(25, len - i * 25);
+      memcpy(line, msg + i * 25, n);
+      line[n] = '\0';
+      gfx->setCursor(15, 80 + i * 14);
+      gfx->println(line);
+    }
+    delay(6000);  // show it for 6 seconds
+    markDirty();
+  });
 }
 
 // ------------------------------------------------------------------
