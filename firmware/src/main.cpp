@@ -155,10 +155,35 @@ void setup() {
 
   bool portalWasUsed = false;
   bool connected;
-  if (strlen(ma_host) == 0) {
+  if (strlen(ma_host) == 0 || strlen(ma_token) < 100) {
+    // host missing OR token too short (form truncates long JWTs):
+    // force the config portal; the token can then be set via
+    // http://192.168.4.1/set?token=<full JWT> (bypasses the HTML form)
     // no MA server configured yet: force the config portal
-    Serial.println("[CFG] host empty -> starting config portal");
+    Serial.println("[CFG] host empty or token too short -> starting config portal");
     drawMessage("Setup portal...");
+    // register a simple endpoint that accepts the token via URL:
+    //   http://192.168.4.1/set?token=<full JWT>&host=<ip>&port=<port>
+    // This bypasses the WiFiManager HTML form, which truncates long JWTs.
+    wm.server->on("/set", HTTP_GET, [&]() {
+      String token = wm.server->arg("token");
+      String host = wm.server->arg("host");
+      String port = wm.server->arg("port");
+      String html = "<html><body><h2>";
+      if (token.length() > 0) {
+        strlcpy(ma_token, token.c_str(), sizeof(ma_token));
+        html += "Token saved! Len: " + String(token.length());
+      } else {
+        html += "ERROR: no token param";
+      }
+      if (host.length() > 0) strlcpy(ma_host, host.c_str(), sizeof(ma_host));
+      if (port.length() > 0) ma_port = (uint16_t)port.toInt();
+      saveConfig();
+      html += "<br>host: " + String(ma_host);
+      html += "<br>port: " + String(ma_port);
+      html += "<br><b>Saved. You can close this page.</b></h2></body></html>";
+      wm.server->send(200, "text/html", html);
+    });
     connected = wm.startConfigPortal("MA-Controller");
     portalWasUsed = true;
   } else {
