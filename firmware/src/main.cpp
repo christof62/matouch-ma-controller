@@ -7,6 +7,8 @@
 #include <Arduino_GFX_Library.h>
 #include <ESP32Encoder.h>
 #include <Preferences.h>
+#include <HTTPClient.h>
+#include <JPEGDEC.h>
 
 #include "config.h"
 #include "cst816.h"
@@ -69,6 +71,14 @@ void handleInput();
 void saveConfig();
 void loadConfig();
 void markDirty() { uiDirty = true; }
+void drawVolumeOverlay();
+void fetchArtwork();
+bool drawArtwork();  // returns true when artwork is on screen
+
+JPEGDEC jpeg;
+uint8_t *artworkJpeg = nullptr;
+size_t artworkJpegLen = 0;
+String artworkLoadedFor = "";
 bool takeDirty() {
   if (uiDirty) { uiDirty = false; return true; }
   return false;
@@ -287,11 +297,18 @@ void loop() {
     ma.fetchPlayers();
   }
 
-  // auto-return from volume screen after inactivity
-  if (screen == SCR_VOLUME && volumeShownAt != 0 && millis() - volumeShownAt > 5000) {
+  // auto-hide the volume overlay after inactivity: full player redraw
+  if (screen == SCR_VOLUME && volumeShownAt != 0 && millis() - volumeShownAt > 2500) {
     volumeShownAt = 0;
     screen = SCR_PLAYER;
-    markDirty();
+    markDirty();  // triggers a FULL player redraw -> overlay is gone completely
+  }
+
+  // fetch artwork for the active player when needed (every 10s max)
+  static uint32_t lastArtTry = 0;
+  if (millis() - lastArtTry > 10000) {
+    lastArtTry = millis();
+    fetchArtwork();
   }
 
   static uint32_t lastDraw = 0;
@@ -481,6 +498,75 @@ void handleInput() {
 }
 
 // ------------------------------------------------------------------
+// Album artwork (JPEG via HTTP, decoded with JPEGDEC into the center)
+// ------------------------------------------------------------------
+static int jpegDrawCallback(JPEGDRAW *pDraw) {
+  gfx->draw16bitBeRGBBitmap(pDraw->x, pDraw->y, pDraw->pPixels,
+                            pDraw->iWidth, pDraw->iHeight);
+  return 1;
+}
+
+void fetchArtwork() {
+  if (ma.players.empty()) return;
+  MaPlayer &p = ma.players[ma.activePlayerIndex];
+  if (p.artwork_url.length() == 0) return;
+  // already loaded for this player+url?
+  String key = p.player_id + "|" + p.artwork_url;
+  if (artworkLoadedFor == key) return;
+
+  WiFiClient client;
+  HTTPClient http;
+  String url = p.artwork_url;
+  if (!url.startsWith("http")) url = String("http://") + ma_host + ":" + String(ma_port) + url;
+  http.begin(client, url);
+  http.setTimeout(5000);
+  int code = http.GET();
+  if (code == 200) {
+    int len = http.getSize();
+    if (len > 0 && len < 200000) {
+      if (artworkJpeg) { free(artworkJpeg); artworkJpeg = nullptr; }
+      artworkJpeg = (uint8_t *)malloc(len);
+      if (artworkJpeg) {
+        WiFiClient *stream = http.getStreamPtr();
+        size_t read = 0;
+        while (read < (size_t)len) {
+          size_t n = stream->readBytes(artworkJpeg + read, len - read);
+          if (n == 0) break;
+          read += n;
+        }
+        artworkJpegLen = read;
+        artworkLoadedFor = key;
+        Serial.printf("[ART] loaded %d bytes for %s\n", (int)read, p.name.c_str());
+      }
+    }
+  } else {
+    Serial.printf("[ART] HTTP %d\n", code);
+  }
+  http.end();
+}
+
+bool drawArtwork() {
+  if (!artworkJpeg || artworkJpegLen == 0) return false;
+  if (jpeg.openRAM(artworkJpeg, artworkJpegLen, jpegDrawCallback) != 1) {
+    Serial.println("[ART] openRAM failed");
+    return false;
+  }
+  // scale to fit a 100x100 area in the display center
+  int scale = 0;
+  while ((jpeg.getWidth() >> (scale + 1)) >= 100 &&
+         (jpeg.getHeight() >> (scale + 1)) >= 100) scale++;
+  int w = jpeg.getWidth() >> scale;
+  int h = jpeg.getHeight() >> scale;
+  int x = 120 - w / 2;
+  int y = 120 - h / 2;
+  if (jpeg.decode(x, y, scale) != 1) {
+    Serial.println("[ART] decode failed");
+    return false;
+  }
+  return true;
+}
+
+// ------------------------------------------------------------------
 // Screens
 // ------------------------------------------------------------------
 void drawScreen() {
@@ -569,18 +655,34 @@ void drawPlayerScreen() {
   drawVolumeArc(120, 120, 112, vol, 8, COL_ACCENT2, COL_RING_OFF);
   drawThickArc(120, 120, 100, 0, TWO_PI_F, 2, stateCol);
 
+  // album art in the center when available
+  bool hasArt = drawArtwork();
+
   gfx->setTextColor(COL_FG);
   gfx->setTextSize(1);
   gfx->setCursor(30, 40);
   gfx->println(p.name.substring(0, 24));
 
-  gfx->setTextSize(2);
-  gfx->setCursor(15, 88);
-  gfx->println(p.current_title.substring(0, 16));
-  gfx->setTextSize(1);
-  gfx->setTextColor(COL_DIM);
-  gfx->setCursor(15, 112);
-  gfx->println(p.current_artist.substring(0, 30));
+  if (hasArt) {
+    // text below the artwork
+    gfx->setTextSize(1);
+    gfx->setCursor(15, 40);
+    gfx->println(p.name.substring(0, 24));
+    gfx->setTextSize(1);
+    gfx->setCursor(15, 178);
+    gfx->println(p.current_title.substring(0, 30));
+    gfx->setTextColor(COL_DIM);
+    gfx->setCursor(15, 192);
+    gfx->println(p.current_artist.substring(0, 30));
+  } else {
+    gfx->setTextSize(2);
+    gfx->setCursor(15, 88);
+    gfx->println(p.current_title.substring(0, 16));
+    gfx->setTextSize(1);
+    gfx->setTextColor(COL_DIM);
+    gfx->setCursor(15, 112);
+    gfx->println(p.current_artist.substring(0, 30));
+  }
 
   gfx->setTextColor(stateCol);
   gfx->setCursor(95, 185);
@@ -592,40 +694,30 @@ void drawPlayerScreen() {
 }
 
 void drawVolumeScreen() {
-  // full redraw only once when entering; afterwards updateVolumeScreen()
-  // refreshes just the arc + number to avoid flicker
-  gfx->fillScreen(BLACK);
-  if (ma.players.empty()) { screen = SCR_PLAYER; return; }
-  MaPlayer &p = ma.players[ma.activePlayerIndex];
+  // draw the full player screen first, then the volume arc on top
+  drawPlayerScreen();
+  drawVolumeOverlay();
+}
 
-  gfx->setTextSize(1);
-  gfx->setTextColor(COL_DIM);
-  gfx->setCursor(52, 165);
-  gfx->println(p.name.substring(0, 22));
+void drawVolumeOverlay() {
+  // arc ring on top of the player view
+  drawVolumeArc(120, 120, 112, volumeTarget, 10, COL_ACCENT, COL_RING_OFF);
 
-  gfx->setCursor(52, 185);
-  gfx->println("auto-apply");
-  updateVolumeScreen(true);
+  // semi-cover the center for the number
+  gfx->fillCircle(120, 120, 55, BLACK);
+  gfx->setTextColor(COL_FG);
+  gfx->setTextSize(3);
+  String v = String(volumeTarget) + "%";
+  int16_t x = 120 - (int16_t)(v.length() * 9);
+  gfx->setCursor(x, 108);
+  gfx->println(v);
 }
 
 void updateVolumeScreen(bool force) {
   static int lastVol = -1;
   if (!force && lastVol == volumeTarget) return;
   lastVol = volumeTarget;
-
-  // clear the FULL ring area first (covers both arc states completely),
-  // then redraw the arc -> no leftovers from previous states
-  gfx->fillCircle(120, 120, 120, BLACK);
-  drawVolumeArc(120, 120, 106, volumeTarget, 12, COL_ACCENT, COL_RING_OFF);
-
-  // clear a generous number area and redraw (digits vary in width)
-  gfx->fillRect(55, 92, 130, 34, BLACK);
-  gfx->setTextColor(COL_FG);
-  gfx->setTextSize(4);
-  String v = String(volumeTarget) + "%";
-  int16_t x = 120 - (int16_t)(v.length() * 12);
-  gfx->setCursor(x, 100);
-  gfx->println(v);
+  drawVolumeOverlay();
 }
 
 void drawPlayerList() {

@@ -308,6 +308,20 @@ void MusicAssistantClient::parsePlayersJson(const char *json, size_t len) {
       mp.current_title = cm["title"] | "";
       mp.current_artist = cm["artist"] | "";
       mp.current_album = cm["album"] | "";
+      // image can be an object or array of objects with a "url"/"path"
+      JsonVariantConst img = cm["image"];
+      if (img.is<JsonArrayConst>()) {
+        JsonArrayConst ia = img.as<JsonArrayConst>();
+        if (ia.size() > 0 && ia[0].is<JsonObjectConst>()) {
+          const char *u = ia[0]["url"] | (const char *)nullptr;
+          if (!u) u = ia[0]["path"];
+          if (u) mp.artwork_url = String(u);
+        }
+      } else if (img.is<JsonObjectConst>()) {
+        const char *u = img["url"] | (const char *)nullptr;
+        if (!u) u = img["path"];
+        if (u) mp.artwork_url = String(u);
+      }
     }
     Serial.printf("[MA] player: %s (%s)\n", mp.name.c_str(), mp.state.c_str());
     players.push_back(mp);
@@ -541,6 +555,19 @@ void MusicAssistantClient::parsePlayer(JsonObjectConst p, bool replaceAll) {
         mp.current_title = cm["title"] | "";
         mp.current_artist = cm["artist"] | "";
         mp.current_album = cm["album"] | "";
+        JsonVariantConst img = cm["image"];
+        if (img.is<JsonArrayConst>()) {
+          JsonArrayConst ia = img.as<JsonArrayConst>();
+          if (ia.size() > 0 && ia[0].is<JsonObjectConst>()) {
+            const char *u = ia[0]["url"] | (const char *)nullptr;
+            if (!u) u = ia[0]["path"];
+            if (u) mp.artwork_url = String(u);
+          }
+        } else if (img.is<JsonObjectConst>()) {
+          const char *u = img["url"] | (const char *)nullptr;
+          if (!u) u = img["path"];
+          if (u) mp.artwork_url = String(u);
+        }
       }
       return;
     }
