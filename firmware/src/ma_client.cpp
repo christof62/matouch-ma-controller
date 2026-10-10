@@ -245,8 +245,18 @@ void MusicAssistantClient::authenticate() {
 }
 
 void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
-  // DEBUG: dump the first incoming message so we can see what the server sends
-  // even when the serial console is unavailable
+  // DEBUG: log the first incoming messages to the on-display status log
+  // so we can follow the protocol even without a serial console
+  static int msgCount = 0;
+  msgCount++;
+  if (msgCount <= 6) {
+    char m[70];
+    snprintf(m, sizeof(m), "recv %d: %.58s", msgCount, (const char *)payload);
+    status(m);
+  }
+  Serial.printf("[MA] msg #%d (%d bytes): %.*s\n", msgCount, (int)length,
+                (int)min((size_t)300, length), (const char *)payload);
+
   static bool firstMsgShown = false;
   if (!firstMsgShown) {
     firstMsgShown = true;
