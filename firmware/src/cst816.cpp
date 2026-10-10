@@ -5,6 +5,7 @@ bool CST816::begin(uint8_t sda, uint8_t scl, uint8_t rst, uint8_t irq) {
   _irq = irq;
 
   Wire.begin(sda, scl);
+  Wire.setClock(400000);
   delay(50);
 
   pinMode(_rst, OUTPUT);
@@ -15,10 +16,25 @@ bool CST816::begin(uint8_t sda, uint8_t scl, uint8_t rst, uint8_t irq) {
 
   pinMode(_irq, INPUT);
 
+  // scan for the touch controller (CST816 variants use 0x14 or 0x15)
+  uint8_t found = 0;
+  for (uint8_t a = 0x10; a <= 0x20; a++) {
+    Wire.beginTransmission(a);
+    if (Wire.endTransmission() == 0) {
+      Serial.printf("[TOUCH] I2C device found at 0x%02X\n", a);
+      if (found == 0) found = a;
+    }
+  }
+  if (found == 0) {
+    Serial.println("[TOUCH] WARNING: no I2C device found - touch disabled");
+    _addr = 0;  // mark as absent
+  } else {
+    _addr = found;
+  }
   uint8_t id = readReg(CST816_REG_CHIP_ID);
-  (void)id;  // chip id logged at debug level only; do not fail if unexpected
+  Serial.printf("[TOUCH] chip id: 0x%02X\n", id);
 
-  return true;
+  return found != 0;
 }
 
 uint8_t CST816::readReg(uint8_t reg) {
@@ -43,8 +59,11 @@ bool CST816::readTouch(uint8_t &x, uint8_t &y) {
 }
 
 bool CST816::readTouchRaw(uint8_t &x, uint8_t &y, uint8_t &gesture) {
-  // IRQ line is LOW while touched on CST816
-  if (_irq >= 0 && digitalRead(_irq) == HIGH && readReg(CST816_REG_STATUS) != 0x62) {
+  // touch controller absent -> never report touches
+  if (_addr == 0) return false;
+
+  // CST816 IRQ line is LOW while touched: skip bus access entirely otherwise
+  if (_irq >= 0 && digitalRead(_irq) == HIGH) {
     return false;
   }
 
