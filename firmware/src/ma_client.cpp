@@ -282,13 +282,20 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
 
   // server info (first message after WS connect) -----------------
   // detect by any typical ServerInfoMessage field (be robust against naming)
-  if (obj["schema_version"].is<int>() || obj["server_version"].is<const char *>() ||
-      obj["server_id"].is<const char *>()) {
-    _schemaVersion = obj["schema_version"] | 0;
-    if (obj["schema_version"].is<const char *>())
+  if (obj["schema_version"].is<int>() || obj["min_supported_schema_version"].is<int>() ||
+      obj["server_version"].is<const char *>() || obj["server_id"].is<const char *>()) {
+    // schema_version may be int or string; min_supported_schema_version is authoritative
+    // for the auth decision when schema_version is missing
+    if (obj["schema_version"].is<int>())
+      _schemaVersion = obj["schema_version"].as<int>();
+    else if (obj["schema_version"].is<const char *>())
       _schemaVersion = atoi(obj["schema_version"].as<const char *>());
+    else if (obj["min_supported_schema_version"].is<int>())
+      _schemaVersion = obj["min_supported_schema_version"].as<int>();
     Serial.printf("[MA] server info: schema %d\n", _schemaVersion);
-    status("server info: schema OK");
+    char m[40];
+    snprintf(m, sizeof(m), "schema %d -> auth needed", _schemaVersion);
+    status(m);
     if (obj["server_version"].is<const char *>())
       Serial.printf("[MA] server version: %s\n", obj["server_version"].as<const char *>());
     if (_schemaVersion >= 28 && _token.length() == 0) {
