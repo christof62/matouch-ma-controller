@@ -135,31 +135,42 @@ void setup() {
 
   drawMessage("Connecting WiFi...");
 
+  bool portalWasUsed = false;
   bool connected;
   if (strlen(ma_host) == 0) {
     // no MA server configured yet: force the config portal
     Serial.println("[CFG] host empty -> starting config portal");
     drawMessage("Setup portal...");
     connected = wm.startConfigPortal("MA-Controller");
+    portalWasUsed = true;
   } else {
     connected = wm.autoConnect("MA-Controller");
   }
+
+  // ALWAYS save the parameters right after the portal/autoconnect returns,
+  // BEFORE any reboot decision - otherwise user input is lost when WiFi
+  // connect fails and the device restarts.
+  if (portalWasUsed) {
+    strlcpy(ma_host, p_host.getValue(), sizeof(ma_host));
+    // trim whitespace
+    char *h = ma_host; while (*h == ' ') memmove(h, h + 1, strlen(h));
+    while (strlen(ma_host) && ma_host[strlen(ma_host) - 1] == ' ') ma_host[strlen(ma_host) - 1] = '\0';
+    ma_port = (uint16_t)atoi(p_port.getValue());
+    if (ma_port == 0) ma_port = MA_WS_PORT_DEFAULT;
+    strlcpy(ma_token, p_token.getValue(), sizeof(ma_token));
+    saveConfig();
+    Serial.printf("[CFG] saved host='%s' port=%u token=%s\n",
+                  ma_host, ma_port, strlen(ma_token) > 0 ? "<set>" : "<empty>");
+  }
+
   if (!connected) {
-    drawMessage("Setup failed - reboot");
-    delay(3000);
+    // WiFi failed, but config is saved now -> retry booting quietly
+    Serial.println("[CFG] WiFi connect failed, saved config, rebooting");
+    drawMessage("WiFi retry...");
+    delay(2000);
     ESP.restart();
   }
 
-  strlcpy(ma_host, p_host.getValue(), sizeof(ma_host));
-  // trim whitespace
-  char *h = ma_host; while (*h == ' ') memmove(h, h + 1, strlen(h));
-  while (strlen(ma_host) && ma_host[strlen(ma_host) - 1] == ' ') ma_host[strlen(ma_host) - 1] = '\0';
-  ma_port = (uint16_t)atoi(p_port.getValue());
-  if (ma_port == 0) ma_port = MA_WS_PORT_DEFAULT;
-  strlcpy(ma_token, p_token.getValue(), sizeof(ma_token));
-  saveConfig();
-  Serial.printf("[CFG] saved host='%s' port=%u token=%s\n",
-                ma_host, ma_port, strlen(ma_token) > 0 ? "<set>" : "<empty>");
   if (strlen(ma_host) == 0) {
     Serial.println("[CFG] ERROR: host still empty after portal! restarting portal");
     drawMessage("No host! retry");
