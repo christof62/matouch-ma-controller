@@ -61,6 +61,7 @@ uint32_t volumeShownAt = 0;
 void drawScreen();
 void drawPlayerScreen();
 void drawVolumeScreen();
+void updateVolumeScreen(bool force);
 void drawPlayerList();
 void drawMenu();
 void drawMessage(const char *msg);
@@ -290,7 +291,16 @@ void loop() {
     markDirty();
   }
 
-  if (takeDirty()) drawScreen();
+  static uint32_t lastDraw = 0;
+  bool dirty = takeDirty();
+  if (screen == SCR_VOLUME && dirty) {
+    if (millis() - lastDraw > 80) {  // max ~12 fps for volume updates
+      lastDraw = millis();
+      updateVolumeScreen(false);
+    }
+  } else if (dirty) {
+    drawScreen();
+  }
 }
 
 // ------------------------------------------------------------------
@@ -334,10 +344,29 @@ void handleInput() {
     }
   }
 
-  // ---- encoder push ----
-  static uint32_t lastPush = 0;
-  if (digitalRead(ENC_SW) == LOW && millis() - lastPush > 300) {
-    lastPush = millis();
+  // ---- encoder push (short + long) ----
+  static uint32_t pressStart = 0;
+  static bool longPressFired = false;
+  bool sw = digitalRead(ENC_SW) == LOW;
+
+  if (sw && pressStart == 0) {
+    pressStart = millis();
+    longPressFired = false;
+  } else if (sw && pressStart != 0 && !longPressFired &&
+             millis() - pressStart > 700) {
+    // LONG PRESS -> open menu (touch replacement)
+    longPressFired = true;
+    if (screen != SCR_MENU && screen != SCR_PLAYERLIST) {
+      screen = SCR_MENU;
+      menuIndex = 0;
+      markDirty();
+    }
+  } else if (!sw && pressStart != 0) {
+    uint32_t dur = millis() - pressStart;
+    pressStart = 0;
+    if (!longPressFired && dur > 30 && dur < 400) {
+      // SHORT PRESS
+      uint32_t lastPush = 0;  // reuse debounce var semantics
     switch (screen) {
       case SCR_VOLUME:
         applyVolume();
@@ -380,6 +409,7 @@ void handleInput() {
         markDirty();
         break;
       }
+    }
     }
   }
 
@@ -425,8 +455,7 @@ void handleInput() {
       if (dy < -40) menuIndex = (menuIndex + 1) % n;
       else if (dy > 40) menuIndex = ((menuIndex - 1) % n + n) % n;
       else if (r < 60) {
-        // push on center = activate (same as encoder push)
-        lastPush = 0;
+        // center touch = activate
       }
       markDirty();
       break;
@@ -547,18 +576,11 @@ void drawPlayerScreen() {
 }
 
 void drawVolumeScreen() {
+  // full redraw only once when entering; afterwards updateVolumeScreen()
+  // refreshes just the arc + number to avoid flicker
   gfx->fillScreen(BLACK);
   if (ma.players.empty()) { screen = SCR_PLAYER; return; }
   MaPlayer &p = ma.players[ma.activePlayerIndex];
-
-  drawVolumeArc(120, 120, 106, volumeTarget, 12, COL_ACCENT, COL_RING_OFF);
-
-  gfx->setTextColor(COL_FG);
-  gfx->setTextSize(4);
-  String v = String(volumeTarget) + "%";
-  int16_t x = 120 - (int16_t)(v.length() * 12);
-  gfx->setCursor(x, 105);
-  gfx->println(v);
 
   gfx->setTextSize(1);
   gfx->setTextColor(COL_DIM);
@@ -567,6 +589,25 @@ void drawVolumeScreen() {
 
   gfx->setCursor(52, 185);
   gfx->println("push = set");
+  updateVolumeScreen(true);
+}
+
+void updateVolumeScreen(bool force) {
+  static int lastVol = -1;
+  if (!force && lastVol == volumeTarget) return;
+  lastVol = volumeTarget;
+
+  // redraw only the arc ring and the number
+  drawVolumeArc(120, 120, 106, volumeTarget, 12, COL_ACCENT, COL_RING_OFF);
+
+  // clear the number area and redraw
+  gfx->fillRect(60, 95, 120, 30, BLACK);
+  gfx->setTextColor(COL_FG);
+  gfx->setTextSize(4);
+  String v = String(volumeTarget) + "%";
+  int16_t x = 120 - (int16_t)(v.length() * 12);
+  gfx->setCursor(x, 100);
+  gfx->println(v);
 }
 
 void drawPlayerList() {
