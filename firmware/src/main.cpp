@@ -122,6 +122,8 @@ void setup() {
 
   loadConfig();
   strlcpy(ma_port_str, String(ma_port).c_str(), sizeof(ma_port_str));
+  Serial.printf("[CFG] loaded host='%s' port=%u token=%s\n",
+                ma_host, ma_port, strlen(ma_token) > 0 ? "<set>" : "<empty>");
 
   WiFiManager wm;
   WiFiManagerParameter p_host("ma_host", "MA Server (IP/Hostname)", ma_host, 64);
@@ -133,7 +135,16 @@ void setup() {
 
   drawMessage("Connecting WiFi...");
 
-  if (!wm.autoConnect("MA-Controller")) {
+  bool connected;
+  if (strlen(ma_host) == 0) {
+    // no MA server configured yet: force the config portal
+    Serial.println("[CFG] host empty -> starting config portal");
+    drawMessage("Setup portal...");
+    connected = wm.startConfigPortal("MA-Controller");
+  } else {
+    connected = wm.autoConnect("MA-Controller");
+  }
+  if (!connected) {
     drawMessage("Setup failed - reboot");
     delay(3000);
     ESP.restart();
@@ -141,8 +152,11 @@ void setup() {
 
   strlcpy(ma_host, p_host.getValue(), sizeof(ma_host));
   ma_port = (uint16_t)atoi(p_port.getValue());
+  if (ma_port == 0) ma_port = MA_WS_PORT_DEFAULT;
   strlcpy(ma_token, p_token.getValue(), sizeof(ma_token));
   saveConfig();
+  Serial.printf("[CFG] saved host='%s' port=%u token=%s\n",
+                ma_host, ma_port, strlen(ma_token) > 0 ? "<set>" : "<empty>");
 
   drawMessage("Connecting MA...");
 
