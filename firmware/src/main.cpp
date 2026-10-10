@@ -27,7 +27,7 @@ MusicAssistantClient ma;
 
 char ma_host[64] = "";
 uint16_t ma_port = MA_WS_PORT_DEFAULT;
-char ma_token[96] = "";
+char ma_token[512] = "";  // MA tokens are long JWTs (~370 chars)
 char ma_port_str[8];
 
 // ------------------------------------------------------------------
@@ -128,7 +128,7 @@ void setup() {
   WiFiManager wm;
   WiFiManagerParameter p_host("ma_host", "MA Server (IP/Hostname)", ma_host, 64);
   WiFiManagerParameter p_port("ma_port", "MA Port (default 8095)", ma_port_str, 8);
-  WiFiManagerParameter p_token("ma_token", "MA Token", ma_token, 96);
+  WiFiManagerParameter p_token("ma_token", "MA Token", ma_token, 512);
   wm.addParameter(&p_host);
   wm.addParameter(&p_port);
   wm.addParameter(&p_token);
