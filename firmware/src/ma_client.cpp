@@ -258,7 +258,7 @@ void MusicAssistantClient::fetchPlayers() {
 void MusicAssistantClient::parsePlayersJson(const char *json, size_t len) {
   // parse with filter to keep memory low (ArduinoJson7 filter syntax)
   JsonDocument filter;
-  JsonArray farr = filter["result"].to<JsonArray>();
+  JsonArray farr = filter.to<JsonArray>();
   JsonObject f0 = farr.add<JsonObject>();
   f0["player_id"] = true;
   f0["name"] = true;
@@ -279,9 +279,16 @@ void MusicAssistantClient::parsePlayersJson(const char *json, size_t len) {
     return;
   }
 
-  JsonArrayConst arr = doc["result"].as<JsonArrayConst>();
+  // HTTP /api returns the result directly as an array;
+  // the WebSocket variant wraps it in {"result": [...]}
+  JsonArrayConst arr = doc.as<JsonArrayConst>();
+  if (arr.isNull()) {
+    arr = doc["result"].as<JsonArrayConst>();
+  }
   if (arr.isNull()) {
     Serial.println("[MA] no players array in response");
+    // dump the first bytes to see what we actually got
+    Serial.printf("[MA] response head: %.200s\n", json);
     return;
   }
 
