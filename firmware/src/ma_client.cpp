@@ -1,5 +1,6 @@
 #include "ma_client.h"
 #include "config.h"
+#include <WiFi.h>
 
 // Music Assistant WebSocket API (schema >= 28 requires auth token).
 // Wire format (JSON, one object per text frame):
@@ -44,7 +45,11 @@ void MusicAssistantClient::begin(const char *host, uint16_t port, const char *to
       case WStype_TEXT:
         handleIncoming(payload, length);
         break;
-      default:
+      case WStype_ERROR:
+        Serial.println("[MA] WS ERROR event");
+        break;
+      case WStype_CONNECTING:
+        Serial.printf("[MA] WS connecting to %s:%u...\n", _host.c_str(), _port);
         break;
     }
   });
@@ -61,6 +66,16 @@ void MusicAssistantClient::connect() {
 
 void MusicAssistantClient::loop() {
   _ws.loop();
+
+  // periodic status heartbeat so the connection state is always visible
+  static uint32_t lastBeat = 0;
+  if (millis() - lastBeat > 10000) {
+    lastBeat = millis();
+    static const char *names[] = {"disconnected", "connecting", "connected", "authenticated", "error"};
+    Serial.printf("[MA] heartbeat: %s, players=%d, wifi=%s\n",
+                  names[(int)_state], (int)players.size(),
+                  WiFi.isConnected() ? "ok" : "DOWN");
+  }
 }
 
 void MusicAssistantClient::disconnect() {
