@@ -48,9 +48,6 @@ void MusicAssistantClient::begin(const char *host, uint16_t port, const char *to
       case WStype_ERROR:
         Serial.println("[MA] WS ERROR event");
         break;
-      case WStype_CONNECTING:
-        Serial.printf("[MA] WS connecting to %s:%u...\n", _host.c_str(), _port);
-        break;
     }
   });
   _ws.setReconnectInterval(RECONNECT_INTERVAL_MS);
