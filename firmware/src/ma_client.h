@@ -94,4 +94,6 @@ private:
   int _schemaVersion = 0;
   int _lastProbeResult = 0;
   uint32_t _connectingSince = 0;
+  bool _pendingAuth = false;
+  bool _pendingPlayersFetch = false;
 };

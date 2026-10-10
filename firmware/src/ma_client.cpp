@@ -69,6 +69,16 @@ void MusicAssistantClient::connect() {
 void MusicAssistantClient::loop() {
   _ws.loop();
 
+  // deferred actions: never send WS commands from inside the WS event callback
+  if (_pendingAuth && _state == MaConnState::Connected) {
+    _pendingAuth = false;
+    authenticate();
+  }
+  if (_pendingPlayersFetch && _authed) {
+    _pendingPlayersFetch = false;
+    fetchPlayers();
+  }
+
   // periodic status heartbeat so the connection state is always visible
   static uint32_t lastBeat = 0;
   if (millis() - lastBeat > 10000) {
@@ -121,7 +131,7 @@ uint32_t nextMessageId() {
 }
 
 void MusicAssistantClient::sendCommand(const char *command, JsonObject args) {
-  if (_state == MaConnState::Disconnected && strcmp(command, "auth") != 0) return;
+  if (_state == MaConnState::Disconnected) return;
   String id = String(nextMessageId());
   if (strcmp(command, "auth") == 0) _authMessageId = id;
   JsonDocument doc;
@@ -317,9 +327,9 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
       // old server: no auth needed -> go straight to fetching players
       _authed = true;
       _state = MaConnState::Authenticated;
-      fetchPlayers();
+      _pendingPlayersFetch = true;
     } else {
-      authenticate();
+      _pendingAuth = true;
     }
     return;
   }
@@ -364,7 +374,7 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
         _state = MaConnState::Authenticated;
         Serial.println("[MA] authenticated OK");
         status("auth OK -> fetch players");
-        fetchPlayers();
+        _pendingPlayersFetch = true;
         if (_onEvent) _onEvent();
         return;
       }
