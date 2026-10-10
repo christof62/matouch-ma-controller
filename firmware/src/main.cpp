@@ -159,8 +159,9 @@ void setup() {
     if (ma_port == 0) ma_port = MA_WS_PORT_DEFAULT;
     strlcpy(ma_token, p_token.getValue(), sizeof(ma_token));
     saveConfig();
-    Serial.printf("[CFG] saved host='%s' port=%u token=%s\n",
-                  ma_host, ma_port, strlen(ma_token) > 0 ? "<set>" : "<empty>");
+    Serial.printf("[CFG] saved host='%s' port=%u token=%s len=%d\n",
+                  ma_host, ma_port, strlen(ma_token) > 0 ? "<set>" : "<empty>",
+                  (int)strlen(ma_token));
   }
 
   if (!connected) {
