@@ -307,7 +307,14 @@ void loop() {
 // Input: encoder rotation + push, touch
 // ------------------------------------------------------------------
 void applyVolume() {
-  if (!ma.players.empty()) {
+  static uint32_t lastSent = 0;
+  static int lastSentVal = -1;
+  if (ma.players.empty()) return;
+  // send at most every 150ms while turning; final value is sent
+  // when the value settles (last value always gets through)
+  if (volumeTarget != lastSentVal && millis() - lastSent > 150) {
+    lastSent = millis();
+    lastSentVal = volumeTarget;
     ma.cmdVolumeSet(ma.players[ma.activePlayerIndex].player_id, volumeTarget);
   }
 }
@@ -323,6 +330,8 @@ void handleInput() {
       case SCR_PLAYER:
       case SCR_VOLUME:
         volumeTarget = constrain(volumeTarget + delta * 2, 0, 100);
+        // apply immediately - no push needed anymore
+        applyVolume();
         screen = SCR_VOLUME;
         volumeShownAt = millis();
         markDirty();
@@ -369,7 +378,7 @@ void handleInput() {
       uint32_t lastPush = 0;  // reuse debounce var semantics
     switch (screen) {
       case SCR_VOLUME:
-        applyVolume();
+        // volume is applied live; short press just returns to the player
         volumeShownAt = 0;
         screen = SCR_PLAYER;
         markDirty();
@@ -588,7 +597,7 @@ void drawVolumeScreen() {
   gfx->println(p.name.substring(0, 22));
 
   gfx->setCursor(52, 185);
-  gfx->println("push = set");
+  gfx->println("auto-apply");
   updateVolumeScreen(true);
 }
 
