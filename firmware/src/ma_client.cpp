@@ -32,11 +32,14 @@ void MusicAssistantClient::begin(const char *host, uint16_t port, const char *to
   _ws.onEvent([this](WStype_t type, uint8_t *payload, size_t length) {
     switch (type) {
       case WStype_CONNECTED:
+        Serial.printf("[MA] WS connected to %s:%u\n", _host.c_str(), _port);
         _state = MaConnState::Connected;
         break;
       case WStype_DISCONNECTED:
+        Serial.println("[MA] WS disconnected");
         _state = MaConnState::Disconnected;
         _authed = false;
+        _authMessageId = "";
         break;
       case WStype_TEXT:
         handleIncoming(payload, length);
@@ -72,13 +75,16 @@ uint32_t nextMessageId() {
 }
 
 void MusicAssistantClient::sendCommand(const char *command, JsonObject args) {
-  if (_state == MaConnState::Disconnected) return;
+  if (_state == MaConnState::Disconnected && strcmp(command, "auth") != 0) return;
+  String id = String(nextMessageId());
+  if (strcmp(command, "auth") == 0) _authMessageId = id;
   JsonDocument doc;
-  doc["message_id"] = String(nextMessageId());
+  doc["message_id"] = id;
   doc["command"] = command;
   doc["args"] = args;
   String out;
   serializeJson(doc, out);
+  Serial.printf("[MA] >> %s\n", out.c_str());
   _ws.sendTXT(out);
 }
 
@@ -184,38 +190,94 @@ void MusicAssistantClient::fetchRadio() {
 
 // ------------------------- incoming -------------------------
 
-void MusicAssistantClient::parseServerInfo(JsonObjectConst msg) {
-  // first message on connect: server info incl. schema version
-  (void)msg;
+void MusicAssistantClient::authenticate() {
+  Serial.printf("[MA] authenticating...\n");
+  JsonDocument doc;
+  JsonObject args = doc.to<JsonObject>();
+  args["token"] = _token;
+  sendCommand("auth", args);
 }
 
 void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, payload, length);
-  if (err) return;
+  if (err) {
+    Serial.printf("[MA] JSON parse error: %s\n", err.c_str());
+    return;
+  }
 
   JsonObjectConst obj = doc.as<JsonObjectConst>();
 
-  // server info / auth handling ----------------------------------
+  // server info (first message after WS connect) -----------------
   if (obj["server_version"].is<const char *>()) {
-    // this is the ServerInfoMessage -> authenticate next
-    JsonDocument adoc;
-    JsonObject aargs = adoc.to<JsonObject>();
-    aargs["token"] = _token;
-    sendCommand("auth", aargs);
+    _schemaVersion = obj["schema_version"] | 0;
+    Serial.printf("[MA] server info: version %s, schema %d\n",
+                  obj["server_version"].as<const char *>(), _schemaVersion);
+    if (_schemaVersion >= 28 && _token.length() == 0) {
+      Serial.println("[MA] WARNING: server requires a token but none is configured!");
+      _state = MaConnState::Error;
+      return;
+    }
+    if (_schemaVersion < 28) {
+      // old server: no auth needed -> go straight to fetching players
+      _authed = true;
+      _state = MaConnState::Authenticated;
+      fetchPlayers();
+    } else {
+      authenticate();
+    }
+    return;
+  }
+
+  // error results -------------------------------------------------
+  if (obj["message_id"].is<const char *>() && obj["error"].is<JsonVariantConst>()) {
+    const char *mid = obj["message_id"];
+    Serial.printf("[MA] command error for msg %s: %s\n", mid,
+                  obj["error"]["message"] | "unknown");
+    if (_authMessageId.length() && _authMessageId == mid) {
+      Serial.println("[MA] AUTH FAILED - check token!");
+      _state = MaConnState::Error;
+    }
     return;
   }
 
   // command results ----------------------------------------------
   if (obj["message_id"].is<const char *>() && obj["result"].is<JsonVariantConst>()) {
-    const char *command = obj["command"] | "";
+    const char *mid = obj["message_id"];
     JsonVariantConst result = obj["result"];
 
-    // players/all -> array of players
+    // auth result? ------------------------------------------------
+    if (_authMessageId.length() && _authMessageId == mid) {
+      if (result.isNull() || result.is<bool>() || result.is<const char *>()) {
+        // auth returns true or a user object depending on schema
+        if (result.is<bool>() && !result.as<bool>()) {
+          Serial.println("[MA] AUTH FAILED - invalid token");
+          _state = MaConnState::Error;
+          return;
+        }
+        _authed = true;
+        _state = MaConnState::Authenticated;
+        Serial.println("[MA] authenticated OK");
+        fetchPlayers();
+        if (_onEvent) _onEvent();
+        return;
+      }
+      // user object returned = success too
+      if (result.is<JsonObjectConst>()) {
+        _authed = true;
+        _state = MaConnState::Authenticated;
+        Serial.println("[MA] authenticated OK");
+        fetchPlayers();
+        if (_onEvent) _onEvent();
+        return;
+      }
+    }
+
+    // players/all -> array of players ---------------------------
     if (result.is<JsonArrayConst>()) {
-      // detect players list by presence of player_id fields
       JsonArrayConst arr = result.as<JsonArrayConst>();
       if (arr.size() > 0 && arr[0].is<JsonObjectConst>() && arr[0]["player_id"].is<const char *>()) {
+        Serial.printf("[MA] players/all: %d players\n", (int)arr.size());
         players.clear();
         for (JsonObjectConst p : arr) {
           MaPlayer mp;
@@ -232,6 +294,7 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
             mp.current_artist = cm["artist"] | "";
             mp.current_album = cm["album"] | "";
           }
+          Serial.printf("[MA] player: %s (%s)\n", mp.name.c_str(), mp.player_id.c_str());
           players.push_back(mp);
         }
         if (activePlayerIndex >= (int)players.size()) activePlayerIndex = 0;
@@ -240,7 +303,6 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
       }
       // generic item lists (favorites/radio browse results)
       if (arr.size() > 0 && arr[0].is<JsonObjectConst>() && arr[0]["uri"].is<const char *>()) {
-        // Heuristic: favorites vs radio depending on last command -> store in favorites
         std::vector<MaItem> *target = &favorites;
         for (JsonObjectConst it : arr) {
           MaItem item;
@@ -251,15 +313,6 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
         if (_onEvent) _onEvent();
       }
     }
-    return;
-  }
-
-  // auth result ---------------------------------------------------
-  if (obj["message_id"].is<const char *>() && obj["result"].is<JsonVariantConst>() && !_authed) {
-    _authed = true;
-    _state = MaConnState::Authenticated;
-    fetchPlayers();
-    if (_onEvent) _onEvent();
     return;
   }
 

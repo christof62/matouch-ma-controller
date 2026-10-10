@@ -337,10 +337,43 @@ void drawMessage(const char *msg) {
 void drawPlayerScreen() {
   gfx->fillScreen(BLACK);
   if (ma.players.empty()) {
+    // show WHY there are no players (connection state)
+    gfx->setTextSize(1);
     gfx->setTextColor(COL_DIM);
-    gfx->setTextSize(2);
-    gfx->setCursor(70, 115);
-    gfx->println("No players");
+    gfx->setCursor(30, 45);
+    gfx->println("MA Server:");
+    gfx->setCursor(30, 65);
+    switch (ma.getState()) {
+      case MaConnState::Disconnected:
+        gfx->setTextColor(COL_STOP);
+        gfx->println("disconnected");
+        gfx->setTextColor(COL_DIM);
+        gfx->setCursor(30, 85);
+        gfx->println("check host/port");
+        break;
+      case MaConnState::Connecting:
+      case MaConnState::Connected:
+        gfx->setTextColor(COL_PAUSE);
+        gfx->println("connecting...");
+        break;
+      case MaConnState::Authenticated:
+        gfx->setTextColor(COL_PLAY);
+        gfx->println("connected");
+        gfx->setTextColor(COL_DIM);
+        gfx->setCursor(30, 85);
+        gfx->println("no players found");
+        break;
+      case MaConnState::Error:
+        gfx->setTextColor(COL_STOP);
+        gfx->println("auth failed!");
+        gfx->setTextColor(COL_DIM);
+        gfx->setCursor(30, 85);
+        gfx->println("check token");
+        break;
+    }
+    gfx->setTextColor(COL_DIM);
+    gfx->setCursor(30, 130);
+    gfx->println(String(ma_host) + ":" + String(ma_port));
     return;
   }
   MaPlayer &p = ma.players[ma.activePlayerIndex];

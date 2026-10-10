@@ -38,6 +38,7 @@ public:
   void loop();
   bool isConnected() const { return _state == MaConnState::Authenticated; }
   MaConnState getState() const { return _state; }
+  int getSchemaVersion() const { return _schemaVersion; }
 
   // Data
   std::vector<MaPlayer> players;
@@ -65,10 +66,10 @@ public:
 private:
   void sendCommand(const char *command, JsonObject args);
   void handleIncoming(uint8_t *payload, size_t length);
-  void parseServerInfo(JsonObjectConst msg);
   void parsePlayer(JsonObjectConst p, bool replaceAll);
   void connect();
   void disconnect();
+  void authenticate();
 
   WebSocketsClient _ws;
   String _host;
@@ -80,4 +81,6 @@ private:
   uint32_t _messageId = 0;
   uint32_t _lastHeartbeat = 0;
   bool _authed = false;
+  String _authMessageId = "";
+  int _schemaVersion = 0;
 };
