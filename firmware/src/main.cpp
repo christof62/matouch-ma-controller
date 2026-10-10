@@ -162,13 +162,12 @@ void setup() {
     // no MA server configured yet: force the config portal
     Serial.println("[CFG] host empty or token too short -> starting config portal");
     drawMessage("Setup portal...");
-    // register the /set endpoint AFTER the portal webserver exists:
-    // setAPCallback runs when the config portal starts (server is up then)
-    wm.setAPCallback([&](WiFiManager *w) {
-      w->server->on("/set", HTTP_GET, [w]() {
-        String token = w->server->arg("token");
-        String host = w->server->arg("host");
-        String port = w->server->arg("port");
+    // setWebServerCallback runs right after the portal webserver is created
+    wm.setWebServerCallback([&]() {
+      wm.server->on("/set", HTTP_GET, [&]() {
+        String token = wm.server->arg("token");
+        String host = wm.server->arg("host");
+        String port = wm.server->arg("port");
         String html = "<html><body><h2>";
         if (token.length() > 0) {
           strlcpy(ma_token, token.c_str(), sizeof(ma_token));
@@ -182,7 +181,7 @@ void setup() {
         html += "<br>host: " + String(ma_host);
         html += "<br>port: " + String(ma_port);
         html += "<br><b>Saved. Reset the device (RST) to apply.</b></h2></body></html>";
-        w->server->send(200, "text/html", html);
+        wm.server->send(200, "text/html", html);
       });
     });
     connected = wm.startConfigPortal("MA-Controller");
