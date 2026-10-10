@@ -37,10 +37,13 @@ void MusicAssistantClient::begin(const char *host, uint16_t port, const char *to
         _state = MaConnState::Connected;
         break;
       case WStype_DISCONNECTED:
-        Serial.println("[MA] WS disconnected");
+        Serial.println("[MA] WS disconnected (handshake failed or connection lost)");
         _state = MaConnState::Disconnected;
         _authed = false;
         _authMessageId = "";
+        if (payload && length) {
+          Serial.printf("[MA] WS close reason: %.*s\n", (int)min((size_t)120, length), (const char *)payload);
+        }
         break;
       case WStype_TEXT:
         handleIncoming(payload, length);
@@ -211,6 +214,15 @@ void MusicAssistantClient::authenticate() {
 }
 
 void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
+  // DEBUG: dump the first incoming message so we can see what the server sends
+  // even when the serial console is unavailable
+  static bool firstMsgShown = false;
+  if (!firstMsgShown) {
+    firstMsgShown = true;
+    Serial.printf("[MA] first message (%d bytes): %.*s\n", (int)length,
+                  (int)min((size_t)300, length), (const char *)payload);
+  }
+
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, payload, length);
   if (err) {
@@ -221,10 +233,15 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
   JsonObjectConst obj = doc.as<JsonObjectConst>();
 
   // server info (first message after WS connect) -----------------
-  if (obj["server_version"].is<const char *>()) {
+  // detect by any typical ServerInfoMessage field (be robust against naming)
+  if (obj["schema_version"].is<int>() || obj["server_version"].is<const char *>() ||
+      obj["server_id"].is<const char *>()) {
     _schemaVersion = obj["schema_version"] | 0;
-    Serial.printf("[MA] server info: version %s, schema %d\n",
-                  obj["server_version"].as<const char *>(), _schemaVersion);
+    if (obj["schema_version"].is<const char *>())
+      _schemaVersion = atoi(obj["schema_version"].as<const char *>());
+    Serial.printf("[MA] server info: schema %d\n", _schemaVersion);
+    if (obj["server_version"].is<const char *>())
+      Serial.printf("[MA] server version: %s\n", obj["server_version"].as<const char *>());
     if (_schemaVersion >= 28 && _token.length() == 0) {
       Serial.println("[MA] WARNING: server requires a token but none is configured!");
       _state = MaConnState::Error;
