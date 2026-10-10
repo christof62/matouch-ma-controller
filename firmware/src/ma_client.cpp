@@ -60,9 +60,9 @@ void MusicAssistantClient::begin(const char *host, uint16_t port, const char *to
 }
 
 void MusicAssistantClient::connect() {
-  if (millis() - _lastConnectAttempt < RECONNECT_INTERVAL_MS) return;
   _lastConnectAttempt = millis();
   _state = MaConnState::Connecting;
+  _connectingSince = millis();
   // WebSocketsClient handles reconnect via setReconnectInterval
 }
 
@@ -77,6 +77,35 @@ void MusicAssistantClient::loop() {
     Serial.printf("[MA] heartbeat: %s, players=%d, wifi=%s\n",
                   names[(int)_state], (int)players.size(),
                   WiFi.isConnected() ? "ok" : "DOWN");
+  }
+
+  // TCP reachability test: if we are stuck in Connecting, try a raw TCP
+  // connect to the server every 15s so the UI can show whether the host
+  // is reachable from WiFi at all (catches AP isolation / wrong IP / firewall)
+  if (_state == MaConnState::Connecting || _state == MaConnState::Disconnected) {
+    static uint32_t lastProbe = 0;
+    if (millis() - lastProbe > 15000) {
+      lastProbe = millis();
+      WiFiClient probe;
+      probe.setTimeout(3000);
+      bool ok = probe.connect(_host.c_str(), _port);
+      Serial.printf("[MA] TCP probe %s:%u -> %s\n", _host.c_str(), _port, ok ? "OK" : "FAILED");
+      _lastProbeResult = ok ? 1 : -1;
+      probe.stop();
+      if (_onEvent) _onEvent();
+    }
+  }
+
+  // connect timeout: if no WS connected within 12s of Connecting, mark disconnected
+  if (_state == MaConnState::Connected) {
+    _connectingSince = 0;
+  } else if (_state == MaConnState::Connecting) {
+    if (_connectingSince == 0) _connectingSince = millis();
+    else if (millis() - _connectingSince > 12000) {
+      Serial.println("[MA] connect attempt timed out");
+      _state = MaConnState::Disconnected;
+      if (_onEvent) _onEvent();
+    }
   }
 }
 

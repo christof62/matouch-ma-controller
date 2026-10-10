@@ -386,9 +386,26 @@ void drawPlayerScreen() {
         gfx->println("check host/port");
         break;
       case MaConnState::Connecting:
-      case MaConnState::Connected:
         gfx->setTextColor(COL_PAUSE);
         gfx->println("connecting...");
+        gfx->setTextColor(COL_DIM);
+        gfx->setCursor(30, 85);
+        if (ma.getProbeResult() == -1)
+          gfx->println("host unreachable!");
+        else if (ma.getProbeResult() == 1) {
+          gfx->println("host reachable,");
+          gfx->setCursor(30, 100);
+          gfx->println("WS handshake stuck");
+        }
+        break;
+      case MaConnState::Connected:
+        gfx->setTextColor(COL_ACCENT);
+        gfx->println("WS connected");
+        gfx->setTextColor(COL_DIM);
+        gfx->setCursor(30, 85);
+        gfx->println("waiting for server");
+        gfx->setCursor(30, 100);
+        gfx->println("info message...");
         break;
       case MaConnState::Authenticated:
         gfx->setTextColor(COL_PLAY);

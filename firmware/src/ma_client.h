@@ -39,6 +39,8 @@ public:
   bool isConnected() const { return _state == MaConnState::Authenticated; }
   MaConnState getState() const { return _state; }
   int getSchemaVersion() const { return _schemaVersion; }
+  // 0 = not probed, 1 = reachable, -1 = unreachable
+  int getProbeResult() const { return _lastProbeResult; }
 
   // Data
   std::vector<MaPlayer> players;
@@ -83,4 +85,6 @@ private:
   bool _authed = false;
   String _authMessageId = "";
   int _schemaVersion = 0;
+  int _lastProbeResult = 0;
+  uint32_t _connectingSince = 0;
 };
