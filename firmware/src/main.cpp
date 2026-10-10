@@ -597,11 +597,13 @@ void updateVolumeScreen(bool force) {
   if (!force && lastVol == volumeTarget) return;
   lastVol = volumeTarget;
 
-  // redraw only the arc ring and the number
+  // clear the FULL ring area first (covers both arc states completely),
+  // then redraw the arc -> no leftovers from previous states
+  gfx->fillCircle(120, 120, 120, BLACK);
   drawVolumeArc(120, 120, 106, volumeTarget, 12, COL_ACCENT, COL_RING_OFF);
 
-  // clear the number area and redraw
-  gfx->fillRect(60, 95, 120, 30, BLACK);
+  // clear a generous number area and redraw (digits vary in width)
+  gfx->fillRect(55, 92, 130, 34, BLACK);
   gfx->setTextColor(COL_FG);
   gfx->setTextSize(4);
   String v = String(volumeTarget) + "%";
