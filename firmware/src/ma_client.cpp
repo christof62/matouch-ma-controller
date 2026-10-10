@@ -35,15 +35,17 @@ void MusicAssistantClient::begin(const char *host, uint16_t port, const char *to
       case WStype_CONNECTED:
         Serial.printf("[MA] WS connected to %s:%u\n", _host.c_str(), _port);
         _state = MaConnState::Connected;
+        if (_onEvent) _onEvent();  // trigger UI redraw with new state
         break;
       case WStype_DISCONNECTED:
         Serial.println("[MA] WS disconnected (handshake failed or connection lost)");
-        _state = MaConnState::Disconnected;
+ _state = MaConnState::Disconnected;
         _authed = false;
         _authMessageId = "";
         if (payload && length) {
           Serial.printf("[MA] WS close reason: %.*s\n", (int)min((size_t)120, length), (const char *)payload);
         }
+        if (_onEvent) _onEvent();  // trigger UI redraw with new state
         break;
       case WStype_TEXT:
         handleIncoming(payload, length);
