@@ -64,6 +64,7 @@ public:
 
   // Data fetches (async; result arrives via events/refresh)
   void fetchPlayers();
+  void parsePlayersJson(const char *json, size_t len);
   void fetchFavorites();
   void fetchRadio();
   std::vector<MaItem> favorites;
@@ -95,5 +96,6 @@ private:
   int _lastProbeResult = 0;
   uint32_t _connectingSince = 0;
   bool _pendingAuth = false;
+  bool _httpFetching = false;
   bool _pendingPlayersFetch = false;
 };

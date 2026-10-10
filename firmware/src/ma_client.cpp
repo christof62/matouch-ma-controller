@@ -1,6 +1,7 @@
 #include "ma_client.h"
 #include "config.h"
 #include <WiFi.h>
+#include <HTTPClient.h>
 
 // Music Assistant WebSocket API (schema >= 28 requires auth token).
 // Wire format (JSON, one object per text frame):
@@ -225,9 +226,88 @@ void MusicAssistantClient::playFavoriteItem(const String &playerId, const MaItem
 // ------------------------- fetches -------------------------
 
 void MusicAssistantClient::fetchPlayers() {
+  // players/all responses are HUGE (10-50KB) and can kill the
+  // WebSocket receive buffer on ESP32. Use the HTTP JSON-RPC endpoint
+  // instead (POST /api with Bearer token), which we can parse streaming.
+  if (_httpFetching) return;
+  _httpFetching = true;
+
+  WiFiClient client;
+  HTTPClient http;
+  String url = String("http://") + _host + ":" + String(_port) + "/api";
+  http.begin(client, url);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", "Bearer " + _token);
+  http.setTimeout(10000);
+
+  String body = "{\"command\":\"players/all\",\"args\":{}}";
+  int code = http.POST(body);
+
+  Serial.printf("[MA] HTTP players/all -> %d\n", code);
+  if (code == 200) {
+    String response = http.getString();
+    Serial.printf("[MA] HTTP response (%d bytes)\n", (int)response.length());
+    parsePlayersJson(response.c_str(), response.length());
+  } else {
+    Serial.printf("[MA] HTTP error: %s\n", http.getString().c_str());
+  }
+  http.end();
+  _httpFetching = false;
+}
+
+void MusicAssistantClient::parsePlayersJson(const char *json, size_t len) {
+  // parse with filter to keep memory low (ArduinoJson7 filter syntax)
+  JsonDocument filter;
+  JsonArray farr = filter["result"].to<JsonArray>();
+  JsonObject f0 = farr.add<JsonObject>();
+  f0["player_id"] = true;
+  f0["name"] = true;
+  f0["available"] = true;
+  f0["powered"] = true;
+  f0["state"] = true;
+  f0["volume_level"] = true;
+  f0["volume_muted"] = true;
+  JsonObject fcm = f0["current_media"].to<JsonObject>();
+  fcm["title"] = true;
+  fcm["artist"] = true;
+  fcm["album"] = true;
+
   JsonDocument doc;
-  JsonObject args = doc.to<JsonObject>();
-  sendCommand("players/all", args);
+  DeserializationError err = deserializeJson(doc, json, len, DeserializationOption::Filter(filter));
+  if (err) {
+    Serial.printf("[MA] players JSON error: %s\n", err.c_str());
+    return;
+  }
+
+  JsonArrayConst arr = doc["result"].as<JsonArrayConst>();
+  if (arr.isNull()) {
+    Serial.println("[MA] no players array in response");
+    return;
+  }
+
+  players.clear();
+  for (JsonObjectConst p : arr) {
+    MaPlayer mp;
+    mp.player_id = p["player_id"].as<String>();
+    if (mp.player_id.length() == 0) continue;
+    mp.name = p["name"] | mp.player_id;
+    mp.available = p["available"] | false;
+    mp.powered = p["powered"] | false;
+    mp.state = p["state"] | "idle";
+    mp.volume_level = p["volume_level"] | 0;
+    mp.muted = p["volume_muted"] | false;
+    JsonObjectConst cm = p["current_media"];
+    if (!cm.isNull()) {
+      mp.current_title = cm["title"] | "";
+      mp.current_artist = cm["artist"] | "";
+      mp.current_album = cm["album"] | "";
+    }
+    Serial.printf("[MA] player: %s (%s)\n", mp.name.c_str(), mp.state.c_str());
+    players.push_back(mp);
+  }
+  Serial.printf("[MA] parsed %d players\n", (int)players.size());
+  if (activePlayerIndex >= (int)players.size()) activePlayerIndex = 0;
+  if (_onEvent) _onEvent();
 }
 
 void MusicAssistantClient::fetchFavorites() {
