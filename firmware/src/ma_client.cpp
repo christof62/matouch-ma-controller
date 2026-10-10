@@ -254,11 +254,20 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
                   (int)min((size_t)300, length), (const char *)payload);
     // show the first bytes of the first message on the display for diagnosis
     if (_onFirstMessage) {
-      char buf[121];
-      int n = (int)min((size_t)120, length);
+      char buf[241];
+      int n = (int)min((size_t)240, length);
       memcpy(buf, payload, n);
       buf[n] = '\0';
-      _onFirstMessage(buf);
+      // try to find "schema_version" and rotate so it is visible on the display
+      char *sv = strstr(buf, "schema_version");
+      if (sv && sv > buf) {
+        char out[241];
+        int head = min(60, (int)(sv - buf));
+        snprintf(out, sizeof(out), "%.*s...%s", head, buf, sv);
+        _onFirstMessage(out);
+      } else {
+        _onFirstMessage(buf);
+      }
     }
   }
 
@@ -279,6 +288,7 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
     if (obj["schema_version"].is<const char *>())
       _schemaVersion = atoi(obj["schema_version"].as<const char *>());
     Serial.printf("[MA] server info: schema %d\n", _schemaVersion);
+    status("server info: schema OK");
     if (obj["server_version"].is<const char *>())
       Serial.printf("[MA] server version: %s\n", obj["server_version"].as<const char *>());
     if (_schemaVersion >= 28 && _token.length() == 0) {

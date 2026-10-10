@@ -38,6 +38,7 @@ class MusicAssistantClient {
 public:
   void begin(const char *host, uint16_t port, const char *token, MaEventCallback cb);
   void setFirstMessageCallback(MaDebugCallback cb) { _onFirstMessage = cb; }
+  void setStatusCallback(MaDebugCallback cb) { _onStatus = cb; }
   void loop();
   bool isConnected() const { return _state == MaConnState::Authenticated; }
   MaConnState getState() const { return _state; }
@@ -82,6 +83,8 @@ private:
   String _token;
   MaEventCallback _onEvent = nullptr;
   MaDebugCallback _onFirstMessage = nullptr;
+  MaDebugCallback _onStatus = nullptr;
+  void status(const char *msg) { if (_onStatus) _onStatus(msg); }
   MaConnState _state = MaConnState::Disconnected;
   uint32_t _lastConnectAttempt = 0;
   uint32_t _messageId = 0;
