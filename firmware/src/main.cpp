@@ -122,8 +122,26 @@ void setup() {
 
   loadConfig();
   strlcpy(ma_port_str, String(ma_port).c_str(), sizeof(ma_port_str));
-  Serial.printf("[CFG] loaded host='%s' port=%u token=%s\n",
-                ma_host, ma_port, strlen(ma_token) > 0 ? "<set>" : "<empty>");
+  Serial.printf("[CFG] loaded host='%s' port=%u token len=%d\n",
+                ma_host, ma_port, (int)strlen(ma_token));
+
+  {
+    // show config incl. token length on the display (no serial needed)
+    gfx->fillScreen(BLACK);
+    gfx->setTextSize(2);
+    gfx->setTextColor(COL_ACCENT);
+    gfx->setCursor(40, 85);
+    gfx->println("Config:");
+    gfx->setTextColor(COL_FG);
+    gfx->setTextSize(1);
+    gfx->setCursor(30, 115);
+    gfx->println(String("host: ") + ma_host);
+    gfx->setCursor(30, 130);
+    gfx->println(String("port: ") + ma_port);
+    gfx->setCursor(30, 145);
+    gfx->println(String("token len: ") + (int)strlen(ma_token));
+    delay(3000);
+  }
 
   WiFiManager wm;
   WiFiManagerParameter p_host("ma_host", "MA Server (IP/Hostname)", ma_host, 64);
