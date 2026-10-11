@@ -518,13 +518,17 @@ bool drawArtwork() {
     return false;
   }
   jpeg.setPixelType(RGB565_LITTLE_ENDIAN);  // matches draw16bitRGBBitmap
-  // scale to fit max 90x90 (round display: corners get clipped above that)
+  // JPEGDEC scale is power-of-two only: pick the largest size that fits 110px
   int scale = 0;
-  while ((jpeg.getWidth() >> scale) > 90 || (jpeg.getHeight() >> scale) > 90) scale++;
+  while ((jpeg.getWidth() >> (scale + 1)) >= 110 &&
+         (jpeg.getHeight() >> (scale + 1)) >= 110) scale++;
   int w = jpeg.getWidth() >> scale;
   int h = jpeg.getHeight() >> scale;
-  int x = 120 - w / 2;
-  int y = 120 - h / 2;
+
+  // center the image in the middle of the round display
+  int x = (SCREEN_W - w) / 2;
+  int y = (SCREEN_H - h) / 2;
+  Serial.printf("[ART] drawing %dx%d at (%d,%d) scale 1/%d\n", w, h, x, y, 1 << scale);
   if (jpeg.decode(x, y, scale) != 1) {
     Serial.println("[ART] decode failed");
     return false;
