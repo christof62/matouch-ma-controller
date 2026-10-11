@@ -78,8 +78,9 @@ extern bool artworkBufValid;
 extern uint16_t *artworkBuf;
 #define MARQUEE_INTERVAL_MS 30000UL  // start a run every 30s
 #define MARQUEE_SPEED_MS 80UL        // pixel step time
-#define MARQUEE_BAND_Y 104           // band top: centered ON the cover
-#define MARQUEE_BAND_H 32            // band height (2x16px font = 32)
+#define MARQUEE_BAND_Y 108           // band top: centered ON the cover
+#define MARQUEE_BAND_H 17            // 1px more than the 16px size-2 font
+#define COL_MARQUEE_BG RGB565(0x30, 0x30, 0x30)  // dark grey backing band
 #define MARQUEE_TEXT_SIZE 2         // large font
 #define MARQUEE_MAX_LEN 64
 
@@ -115,8 +116,8 @@ bool decodeArtworkToBuffer();
 void drawMarqueeFrame() {
   int bandW = 216;                       // usable width inside the ring
   int x0 = (SCREEN_W - bandW) / 2;
-  // solid black backing band while the text runs (simple + readable)
-  gfx->fillRect(x0, MARQUEE_BAND_Y, bandW, MARQUEE_BAND_H, BLACK);
+  // dark grey backing band while the text runs (simple + readable)
+  gfx->fillRect(x0, MARQUEE_BAND_Y, bandW, MARQUEE_BAND_H, COL_MARQUEE_BG);
   if (marqueeOffset < 0) return;         // idle: band just cleared
   gfx->setTextSize(MARQUEE_TEXT_SIZE);
   gfx->setTextColor(COL_FG);
@@ -125,7 +126,7 @@ void drawMarqueeFrame() {
     int cxPos = x + i * 12;
     if (cxPos + 12 <= x0 || cxPos >= x0 + bandW) continue;
     char c[2] = { marqueeText[i], '\0' };
-    gfx->setCursor(cxPos, MARQUEE_BAND_Y + 8);
+    gfx->setCursor(cxPos, MARQUEE_BAND_Y);
     gfx->print(c);
   }
 }
@@ -335,10 +336,13 @@ void loop() {
       int textW = marqueeText.length() * 12;
       int bandW = 216;
       if (marqueeOffset > textW + bandW) {
-        // run finished: full redraw restores the cover, then schedule next
+        // run finished: clear the band, then full redraw restores the cover
         marqueeOffset = -1;
         marqueeNextStart = millis() + MARQUEE_INTERVAL_MS;
-        markDirty();  // player redraw incl. cover -> band is gone
+        // drawMarqueeFrame with offset<0 clears the band to background,
+        // then the player redraw re-blits the cover over that area
+        drawMarqueeFrame();
+        markDirty();
       } else {
         drawMarqueeFrame();
       }
