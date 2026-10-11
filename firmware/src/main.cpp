@@ -645,6 +645,16 @@ void fetchArtwork() {
   HTTPClient http;
   String url = p.artwork_url;
   if (!url.startsWith("http")) url = String("http://") + ma_host + ":" + String(ma_port) + url;
+  // request only the size we actually display (216px circle): replaces the
+  // size=NNN parameter of the MA imageproxy -> ~4x smaller/faster downloads
+  // that no longer stall the websocket (which caused server disconnects)
+  if (url.indexOf("imageproxy") >= 0 && url.indexOf("size=") >= 0) {
+    int sp = url.indexOf("size=");
+    int end = url.indexOf('&', sp);
+    String head = url.substring(0, sp);
+    String tail = (end >= 0) ? url.substring(end) : "";
+    url = head + "size=240" + tail;
+  }
   http.begin(client, url);
   http.setTimeout(5000);
   int code = http.GET();
