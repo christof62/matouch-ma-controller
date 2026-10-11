@@ -57,10 +57,9 @@ void MusicAssistantClient::begin(const char *host, uint16_t port, const char *to
     }
   });
   _ws.setReconnectInterval(RECONNECT_INTERVAL_MS);
-  // keep the connection alive: send WS pings every 20s so routers/NAT
-  // and the server (aiohttp heartbeat) never see an idle connection.
-  // Idle TCP connections are the #1 cause of recurring drops.
-  _ws.enableHeartbeat(20000, 0, true);
+  // keep the connection alive: ping every 20s, wait up to 30s for the pong,
+  // drop after 2 missed pongs. (args: pingInterval, pongTimeout[ms], count)
+  _ws.enableHeartbeat(20000, 30000, 2);
   connect();
 }
 
