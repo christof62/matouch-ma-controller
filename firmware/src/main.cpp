@@ -37,7 +37,6 @@ char ma_port_str[8];
 // ------------------------------------------------------------------
 enum Screen { SCR_PLAYER, SCR_VOLUME, SCR_PLAYERLIST, SCR_MENU };
 Screen screen = SCR_PLAYER;
-int menuIndex = 0;
 int volumeTarget = 50;
 volatile bool uiDirty = true;
 uint32_t volumeShownAt = 0;
@@ -66,7 +65,6 @@ void drawVolumeScreen();
 void updateVolumeScreen(bool force);
 void drawMarqueeFrame();
 void drawPlayerList();
-void drawMenu();
 void drawMessage(const char *msg);
 void handleInput();
 void saveConfig();
@@ -380,6 +378,8 @@ void applyVolume() {
 void handleInput() {
   // ---- encoder rotation ----
   static int64_t lastCount = 0;
+  static int8_t lastDir = 0;        // direction of the previous accepted step
+  static uint32_t lastStepAt = 0;   // when it happened
   int64_t now = encoder.getCount();
   int delta = (int)(now - lastCount);
   // clamp spikes from contact noise: ignore impossible jumps
@@ -387,6 +387,16 @@ void handleInput() {
     delta = (delta > 0) ? 2 : -2;  // treat as a single detent step
   }
   if (delta != 0) {
+    int8_t dir = (delta > 0) ? 1 : -1;
+    uint32_t nowMs = millis();
+    // debounce bounce: a direction change or double step within 40ms is
+    // contact bounce -> ignore; a real detent never comes that fast
+    if (dir == lastDir && (nowMs - lastStepAt) < 40) {
+      lastCount = now;  // consume the bounce, do not move
+      return;
+    }
+    lastDir = dir;
+    lastStepAt = nowMs;
     lastCount = now;
     switch (screen) {
       case SCR_PLAYER:
@@ -414,12 +424,6 @@ void handleInput() {
         }
         break;
       }
-      case SCR_MENU: {
-        int n = 5;
-        menuIndex = ((menuIndex + delta) % n + n) % n;
-        markDirty();
-        break;
-      }
     }
   }
 
@@ -433,11 +437,10 @@ void handleInput() {
     longPressFired = false;
   } else if (sw && pressStart != 0 && !longPressFired &&
              millis() - pressStart > 700) {
-    // LONG PRESS -> open menu (touch replacement)
+    // LONG PRESS -> open the player selection directly
     longPressFired = true;
-    if (screen != SCR_MENU && screen != SCR_PLAYERLIST) {
-      screen = SCR_MENU;
-      menuIndex = 0;
+    if (screen != SCR_PLAYERLIST) {
+      screen = SCR_PLAYERLIST;
       markDirty();
     }
   } else if (!sw && pressStart != 0) {
@@ -461,33 +464,7 @@ void handleInput() {
         screen = SCR_PLAYER;
         markDirty();
         break;
-      case SCR_MENU: {
-        if (!ma.players.empty()) {
-          const String &pid = ma.players[ma.activePlayerIndex].player_id;
-          switch (menuIndex) {
-            case 0: screen = SCR_PLAYER; break;
-            case 1: screen = SCR_VOLUME; volumeShownAt = millis(); break;
-            case 2: screen = SCR_PLAYERLIST; break;
-            case 3:
-              ma.cmdPower(pid, !ma.players[ma.activePlayerIndex].powered);
-              screen = SCR_PLAYER;
-              break;
-            case 4: {
-              WiFiManager wm;
-              drawMessage("WiFi portal 180s");
-              wm.startConfigPortal("MA-Controller");
-              ESP.restart();
-              break;
-            }
-          }
-        } else if (menuIndex == 4) {
-          WiFiManager wm;
-          wm.startConfigPortal("MA-Controller");
-          ESP.restart();
-        }
-        markDirty();
-        break;
-      }
+
     }
     }
   }
@@ -514,7 +491,7 @@ void handleInput() {
         screen = SCR_PLAYERLIST;
         markDirty();
       } else if (dy > 30) {
-        screen = SCR_MENU;
+        screen = SCR_PLAYERLIST;
         markDirty();
       }
       break;
@@ -529,16 +506,7 @@ void handleInput() {
       }
       break;
     }
-    case SCR_MENU: {
-      int n = 5;
-      if (dy < -40) menuIndex = (menuIndex + 1) % n;
-      else if (dy > 40) menuIndex = ((menuIndex - 1) % n + n) % n;
-      else if (r < 60) {
-        // center touch = activate
-      }
-      markDirty();
-      break;
-    }
+
   }
   delay(60);  // touch debounce
 }
@@ -706,7 +674,7 @@ void drawScreen() {
     case SCR_PLAYER:     drawPlayerScreen(); break;
     case SCR_VOLUME:     drawVolumeOverlay(); break;  // overlay only - fast
     case SCR_PLAYERLIST: drawPlayerList(); break;
-    case SCR_MENU:       drawMenu(); break;
+
   }
 }
 
@@ -846,49 +814,33 @@ void drawVolumeOverlay() {
 
 void drawPlayerList() {
   gfx->fillScreen(BLACK);
-  gfx->setTextColor(COL_FG);
-  gfx->setTextSize(1);
-  gfx->setCursor(30, 22);
-  gfx->println("Players");
-
   int n = (int)ma.players.size();
   if (n == 0) {
     gfx->setTextColor(COL_DIM);
-    gfx->setCursor(70, 115);
+    gfx->setTextSize(2);
+    gfx->setCursor(70, 112);
     gfx->println("No players");
     return;
   }
-  int start = max(0, ma.activePlayerIndex - 3);
-  int end = min(n, start + 7);
+  // bigger font (size 2), centered layout, no heading
+  gfx->setTextSize(2);
+  int start = max(0, ma.activePlayerIndex - 2);
+  int end = min(n, start + 5);
+  int visible = end - start;
+  int yTop = 120 - (visible * 22) / 2;
   for (int i = start; i < end; i++) {
-    int y = 45 + (i - start) * 24;
+    int y = yTop + (i - start) * 22;
     if (i == ma.activePlayerIndex) {
-      gfx->fillCircle(22, y + 7, 4, COL_ACCENT);
+      gfx->fillCircle(14, y + 8, 4, COL_ACCENT);
       gfx->setTextColor(COL_ACCENT);
     } else {
       gfx->setTextColor(COL_DIM);
     }
-    gfx->setCursor(32, y);
-    gfx->println(ma.players[i].name.substring(0, 18));
+    gfx->setCursor(26, y);
+    gfx->println(ma.players[i].name.substring(0, 15));
   }
 }
 
-void drawMenu() {
-  gfx->fillScreen(BLACK);
-  const char *items[5] = {"Back", "Volume", "Players", "Power", "WiFi setup"};
-  gfx->setTextSize(1);
-  for (int i = 0; i < 5; i++) {
-    int y = 60 + i * 25;
-    if (i == menuIndex) {
-      gfx->fillCircle(40, y + 7, 4, COL_ACCENT);
-      gfx->setTextColor(COL_ACCENT);
-    } else {
-      gfx->setTextColor(COL_DIM);
-    }
-    gfx->setCursor(50, y);
-    gfx->println(items[i]);
-  }
-}
 
 // ------------------------------------------------------------------
 // Config persistence
