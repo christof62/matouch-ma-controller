@@ -660,6 +660,7 @@ void fetchArtwork() {
   }
   http.begin(client, url);
   http.setTimeout(5000);
+  Serial.printf("[ART] GET: %s\n", url.c_str());  // DEBUG: the exact URL
   int code = http.GET();
   if (code == 200) {
     int len = http.getSize();
