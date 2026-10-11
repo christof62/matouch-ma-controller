@@ -72,6 +72,11 @@ void saveConfig();
 void loadConfig();
 void saveSelectedPlayer();
 void restoreSelectedPlayer();
+// album artwork: circular mask reaching just inside the volume ring
+// (ring inner edge ~r108 -> mask radius 108 -> diameter 216)
+#define ART_SIZE 216
+static uint16_t *artDecodeBuf = nullptr;  // PSRAM, allocated in setup()
+
 void markDirty() { uiDirty = true; }
 void drawVolumeOverlay();
 void fetchArtwork();
@@ -131,6 +136,10 @@ void setup() {
   gfx->fillScreen(BLACK);
 
   touch.begin(TOUCH_SDA, TOUCH_SCL, TOUCH_RST, TOUCH_INT);
+
+  // artwork decode scratch buffer in PSRAM (93KB)
+  artDecodeBuf = (uint16_t *)ps_malloc(ART_SIZE * ART_SIZE * sizeof(uint16_t));
+  if (!artDecodeBuf) Serial.println("[ART] FATAL: scratch alloc failed");
 
   pinMode(ENC_SW, INPUT_PULLUP);
   // FullQuad counts only complete detent steps -> robust against
@@ -465,10 +474,7 @@ void handleInput() {
 // ------------------------------------------------------------------
 // Album artwork (JPEG via HTTP, decoded with JPEGDEC into the center)
 // ------------------------------------------------------------------
-// decode into an offscreen buffer (128x128), then apply a circular clip
-#define ART_SIZE 160  // circular artwork diameter: fills the inner area
-                       // up to the volume ring (ring inner edge ~r108)
-static uint16_t artDecodeBuf[ART_SIZE * ART_SIZE];
+// decode into an offscreen PSRAM buffer, then apply a circular clip
 
 static int jpegDrawCallback(JPEGDRAW *pDraw) {
   // pDraw->x/y are buffer coordinates (JPEGDEC adds the decode origin).
@@ -564,7 +570,7 @@ bool decodeArtworkToBuffer() {
          (jpeg.getHeight() >> (scale + 1)) >= ART_SIZE) scale++;
   int w = jpeg.getWidth() >> scale;
   int h = jpeg.getHeight() >> scale;
-  memset(artDecodeBuf, 0, sizeof(artDecodeBuf));
+  memset(artDecodeBuf, 0, (size_t)ART_SIZE * ART_SIZE * sizeof(uint16_t));
   if (w > ART_SIZE || h > ART_SIZE) {
     // scaled image larger than the buffer: crop the CENTER region.
     // JPEGDEC's setCropArea works along MCU boundaries and passes the
@@ -592,14 +598,15 @@ bool decodeArtworkToBuffer() {
     }
   }
   // (re)allocate the persistent buffer in PSRAM
+  size_t bufBytes = (size_t)ART_SIZE * ART_SIZE * sizeof(uint16_t);
   if (!artworkBuf) {
-    artworkBuf = (uint16_t *)ps_malloc(sizeof(artDecodeBuf));
+    artworkBuf = (uint16_t *)ps_malloc(bufBytes);
     if (!artworkBuf) {
       Serial.println("[ART] PSRAM alloc failed");
       return false;
     }
   }
-  memcpy(artworkBuf, artDecodeBuf, sizeof(artDecodeBuf));
+  memcpy(artworkBuf, artDecodeBuf, bufBytes);
   artworkBufValid = true;
   return true;
 }
