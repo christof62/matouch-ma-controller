@@ -471,7 +471,9 @@ void handleInput() {
 static uint16_t artDecodeBuf[ART_SIZE * ART_SIZE];
 
 static int jpegDrawCallback(JPEGDRAW *pDraw) {
-  // copy the decoded MCU block into the offscreen buffer
+  // pDraw->x/y are buffer coordinates (JPEGDEC adds the decode origin).
+  // MCUs that start outside the buffer partially overlap: pDraw->x can be
+  // negative (left/top crop) - handle per-pixel clipping correctly.
   for (int y = 0; y < pDraw->iHeight; y++) {
     int dy = pDraw->y + y;
     if (dy < 0 || dy >= ART_SIZE) continue;
@@ -560,14 +562,32 @@ bool decodeArtworkToBuffer() {
          (jpeg.getHeight() >> scale) > ART_SIZE) scale++;
   int w = jpeg.getWidth() >> scale;
   int h = jpeg.getHeight() >> scale;
-  int x0 = (ART_SIZE - w) / 2;
-  int y0 = (ART_SIZE - h) / 2;
-  Serial.printf("[ART] src %dx%d -> buf %dx%d scale 1/%d\n",
-                jpeg.getWidth(), jpeg.getHeight(), w, h, 1 << scale);
   memset(artDecodeBuf, 0, sizeof(artDecodeBuf));
-  if (jpeg.decode(x0, y0, scale) != 1) {
-    Serial.println("[ART] decode failed");
-    return false;
+  if (w > ART_SIZE || h > ART_SIZE) {
+    // scaled image larger than the buffer: crop the CENTER region.
+    // JPEGDEC's setCropArea works along MCU boundaries and passes the
+    // cropped pixels to the callback - position (0,0) in the callback
+    // maps to the crop area's top-left corner.
+    int cx = (w - ART_SIZE) / 2;
+    int cy = (h - ART_SIZE) / 2;
+    Serial.printf("[ART] src %dx%d crop (%d,%d) %dx%d scale 1/%d\n",
+                  jpeg.getWidth(), jpeg.getHeight(), cx, cy, ART_SIZE, ART_SIZE,
+                  1 << scale);
+    jpeg.setCropArea(cx, cy, ART_SIZE, ART_SIZE);
+    if (jpeg.decode(0, 0, scale) != 1) {
+      Serial.println("[ART] decode failed");
+      return false;
+    }
+  } else {
+    // image fits: center it in the buffer
+    int x0 = (ART_SIZE - w) / 2;
+    int y0 = (ART_SIZE - h) / 2;
+    Serial.printf("[ART] src %dx%d centered at (%d,%d) scale 1/%d\n",
+                  jpeg.getWidth(), jpeg.getHeight(), x0, y0, 1 << scale);
+    if (jpeg.decode(x0, y0, scale) != 1) {
+      Serial.println("[ART] decode failed");
+      return false;
+    }
   }
   // (re)allocate the persistent buffer in PSRAM
   if (!artworkBuf) {
