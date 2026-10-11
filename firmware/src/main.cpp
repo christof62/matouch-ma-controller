@@ -326,14 +326,21 @@ void handleInput() {
     lastCount = now;
     switch (screen) {
       case SCR_PLAYER:
-      case SCR_VOLUME:
+      case SCR_VOLUME: {
         volumeTarget = constrain(volumeTarget + delta * 2, 0, 100);
         // apply immediately - no push needed anymore
         applyVolume();
-        screen = SCR_VOLUME;
+        if (screen == SCR_PLAYER) {
+          // transition into the overlay: draw the base once, then the overlay
+          drawPlayerScreen();
+          drawVolumeOverlay();
+          screen = SCR_VOLUME;
+        } else {
+          drawVolumeOverlay();  // already in overlay: refresh ring+number only
+        }
         volumeShownAt = millis();
-        markDirty();
-        break;
+        break;  // drawn directly - no markDirty -> no slow full redraw
+      }
       case SCR_PLAYERLIST: {
         int n = (int)ma.players.size();
         if (n > 0) {
@@ -544,17 +551,25 @@ bool drawArtwork() {
   int y0 = (SCREEN_H - ART_SIZE) / 2;
   int cx = ART_SIZE / 2, cy = ART_SIZE / 2;
   int r2 = cx * cx;  // circle radius = half size
-  // stretch the decoded image region (artImgX0..+W) to the full mask so
-  // smaller-than-mask covers leave no bars (nearest-neighbor sampling)
+  // fast row-based blit: sample the row, then draw the visible span
+  // with a single call per row (much faster than per-pixel drawPixel)
+  static uint16_t rowBuf[ART_SIZE];
   for (int y = 0; y < ART_SIZE; y++) {
-    for (int x = 0; x < ART_SIZE; x++) {
-      int dx = x - cx, dy = y - cy;
-      if (dx * dx + dy * dy <= r2) {
-        int sx = artImgX0 + (x * artImgW) / ART_SIZE;
-        int sy = artImgY0 + (y * artImgH) / ART_SIZE;
-        gfx->drawPixel(x0 + x, y0 + y, artworkBuf[sy * ART_SIZE + sx]);
-      }
+    int dy = y - cy;
+    int dyr = r2 - dy * dy;          // remaining x² budget for this row
+    if (dyr < 0) continue;           // row outside the circle
+    int halfW = 0;
+    while ((halfW + 1) * (halfW + 1) <= dyr) halfW++;
+    int xStart = cx - halfW;
+    int span = 2 * halfW + 1;
+    // sample the stretched row segment
+    for (int i = 0; i < span; i++) {
+      int x = xStart + i;
+      int sx = artImgX0 + (x * artImgW) / ART_SIZE;
+      int sy = artImgY0 + (y * artImgH) / ART_SIZE;
+      rowBuf[i] = artworkBuf[sy * ART_SIZE + sx];
     }
+    gfx->draw16bitRGBBitmap(x0 + xStart, y0 + y, rowBuf, span, 1);
   }
   return true;
 }
@@ -625,7 +640,7 @@ bool decodeArtworkToBuffer() {
 void drawScreen() {
   switch (screen) {
     case SCR_PLAYER:     drawPlayerScreen(); break;
-    case SCR_VOLUME:     drawVolumeScreen(); break;
+    case SCR_VOLUME:     drawVolumeOverlay(); break;  // overlay only - fast
     case SCR_PLAYERLIST: drawPlayerList(); break;
     case SCR_MENU:       drawMenu(); break;
   }
@@ -737,8 +752,17 @@ void drawPlayerScreen() {
 }
 
 void drawVolumeScreen() {
-  // draw the full player screen first, then the volume arc on top
+  // entering the overlay: full player redraw once (fresh base incl. cover)
   drawPlayerScreen();
+  drawVolumeOverlay();
+}
+
+void updateVolumeScreen(bool force) {
+  static int lastVol = -1;
+  if (!force && lastVol == volumeTarget) return;
+  lastVol = volumeTarget;
+  // ONLY redraw the ring + number - keep the cover on screen untouched.
+  // This is fast and no longer re-renders the artwork.
   drawVolumeOverlay();
 }
 
@@ -756,12 +780,7 @@ void drawVolumeOverlay() {
   gfx->println(v);
 }
 
-void updateVolumeScreen(bool force) {
-  static int lastVol = -1;
-  if (!force && lastVol == volumeTarget) return;
-  lastVol = volumeTarget;
-  drawVolumeOverlay();
-}
+
 
 void drawPlayerList() {
   gfx->fillScreen(BLACK);
