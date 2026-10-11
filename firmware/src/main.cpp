@@ -101,6 +101,7 @@ JPEGDEC jpeg;
 uint8_t *artworkJpeg = nullptr;
 size_t artworkJpegLen = 0;
 String artworkLoadedFor = "";
+String artworkUriFor = "";   // media uri the decoded cover belongs to
 uint16_t *artworkBuf = nullptr;   // decoded, circular-clipped RGB565 (PSRAM)
 bool artworkBufValid = false;
 
@@ -687,11 +688,11 @@ void fetchArtwork() {
         }
         artworkJpegLen = read;
         artworkLoadedFor = key;
+        artworkUriFor = p.current_uri;   // cover belongs to THIS track
         lastTrackKey = trackKey;
         Serial.printf("[ART] loaded %d bytes for %s\n", (int)read, p.name.c_str());
         if (decodeArtworkToBuffer()) {
-          // redraw only the player screen with the new cover
-          if (screen == SCR_PLAYER) drawPlayerScreen();
+          markDirty();  // redraw from the loop (works in any screen state)
         }
       }
     }
@@ -878,8 +879,11 @@ void drawPlayerScreen() {
   int ringVol = p.volume_support ? p.volume_level : 100;
   drawVolumeArc(120, 120, 117, ringVol, 6, stateCol, COL_RING_OFF);
 
-  // album art in the center when available
-  bool hasArt = drawArtwork();
+  // album art only when it belongs to the CURRENT track (uri match):
+  // after a track change the old cover must not be shown for the new title
+  bool artIsCurrent = artworkBufValid && artworkUriFor.length() > 0 &&
+                      artworkUriFor == p.current_uri;
+  bool hasArt = artIsCurrent ? drawArtwork() : false;
 
   if (hasArt) {
     // title/artist shown as scrolling marquee in the lower band (large text)
