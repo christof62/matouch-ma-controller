@@ -397,18 +397,30 @@ void loop() {
     ma.fetchPlayers();
   }
 
-  // auto-hide the volume overlay after inactivity: full player redraw
+  // auto-hide the volume overlay after inactivity: full player redraw.
+  // The timeout also means the encoder has settled -> flush the final value.
   if (screen == SCR_VOLUME && volumeShownAt != 0 && millis() - volumeShownAt > 2500) {
     volumeShownAt = 0;
     screen = SCR_PLAYER;
-    markDirty();  // triggers a FULL player redraw -> overlay is gone completely
+    flushVolume();  // final volume always reaches the server
+    markDirty();
   }
 
-  // fetch artwork: immediately when an event flagged it, else every 10s
+  // fetch artwork: DELAYED after an event flag (1.5s) so the download
+  // does not collide with the play/pause/trackchange event burst on a
+  // weak RF link; fallback poll every 10s
   static uint32_t lastArtTry = 0;
-  if (artworkFetchPending || millis() - lastArtTry > 10000) {
+  static uint32_t artFlaggedAt = 0;
+  if (artworkFetchPending) {
+    if (artFlaggedAt == 0) artFlaggedAt = millis();  // start of the stagger
+    if (millis() - artFlaggedAt >= 1500) {           // burst has passed
+      artworkFetchPending = false;
+      artFlaggedAt = 0;
+      lastArtTry = millis();
+      fetchArtwork();
+    }
+  } else if (millis() - lastArtTry > 10000) {
     lastArtTry = millis();
-    artworkFetchPending = false;
     fetchArtwork();
   }
 
@@ -456,13 +468,24 @@ void applyVolume() {
   static uint32_t lastSent = 0;
   static int lastSentVal = -1;
   if (ma.players.empty()) return;
-  // send at most every 150ms while turning; final value is sent
-  // when the value settles (last value always gets through)
-  if (volumeTarget != lastSentVal && millis() - lastSent > 150) {
+  // throttled sends while turning (250ms) - spreads the traffic on a
+  // weak RF link instead of bursting one command per detent
+  if (volumeTarget != lastSentVal && millis() - lastSent > 250) {
     lastSent = millis();
     lastSentVal = volumeTarget;
     ma.cmdVolumeSet(ma.players[ma.activePlayerIndex].player_id, volumeTarget);
   }
+}
+
+void flushVolume() {
+  // called when the encoder settles: makes sure the FINAL volume value
+  // is always sent (even if the throttle swallowed the last steps)
+  static uint32_t lastFlush = 0;
+  if (ma.players.empty()) return;
+  if (millis() - lastFlush < 300) return;  // avoid double-sends
+  lastFlush = millis();
+  ma.cmdVolumeSet(ma.players[ma.activePlayerIndex].player_id, volumeTarget);
+  Serial.printf("[MA] volume flushed: %d\n", volumeTarget);
 }
 
 void handleInput() {
