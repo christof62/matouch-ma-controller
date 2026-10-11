@@ -82,8 +82,19 @@ JPEGDEC jpeg;
 uint8_t *artworkJpeg = nullptr;
 size_t artworkJpegLen = 0;
 String artworkLoadedFor = "";
-uint16_t *artworkBuf = nullptr;   // decoded, circular-clipped RGB565 (128x128)
+uint16_t *artworkBuf = nullptr;   // decoded, circular-clipped RGB565
 bool artworkBufValid = false;
+
+// per-player artwork cache in PSRAM: switching players shows the
+// cover instantly without re-downloading
+#define ART_CACHE_MAX 12
+struct ArtCacheEntry {
+  String key;
+  uint16_t *buf;
+};
+static ArtCacheEntry artCache[ART_CACHE_MAX];
+static int artCacheCount = 0;
+static int artCacheNext = 0;
 bool takeDirty() {
   if (uiDirty) { uiDirty = false; return true; }
   return false;
@@ -548,6 +559,20 @@ bool drawArtwork() {
 
 bool decodeArtworkToBuffer() {
   if (!artworkJpeg || artworkJpegLen == 0) return false;
+
+  // check the per-player cache first (instant switch-back)
+  if (ma.players.size() > 0) {
+    MaPlayer &p = ma.players[ma.activePlayerIndex];
+    String key = p.player_id + "|" + p.artwork_url;
+    for (int i = 0; i < artCacheCount; i++) {
+      if (artCache[i].key == key) {
+        artworkBuf = artCache[i].buf;
+        artworkBufValid = true;
+        return true;  // cached in PSRAM
+      }
+    }
+  }
+
   if (jpeg.openRAM(artworkJpeg, artworkJpegLen, jpegDrawCallback) != 1) {
     Serial.println("[ART] openRAM failed");
     return false;
@@ -559,22 +584,41 @@ bool decodeArtworkToBuffer() {
          (jpeg.getHeight() >> (scale + 1)) >= ART_SIZE) scale++;
   int w = jpeg.getWidth() >> scale;
   int h = jpeg.getHeight() >> scale;
-  // center the scaled image in the 128x128 buffer
   int x0 = (ART_SIZE - w) / 2;
   int y0 = (ART_SIZE - h) / 2;
-  Serial.printf("[ART] src %dx%d -> buf %dx%d at (%d,%d) scale 1/%d\n",
-                jpeg.getWidth(), jpeg.getHeight(), w, h, x0, y0, 1 << scale);
-  // zero the buffer first (transparent background for the clip)
+  Serial.printf("[ART] src %dx%d -> buf %dx%d scale 1/%d\n",
+                jpeg.getWidth(), jpeg.getHeight(), w, h, 1 << scale);
+  // zero the decode scratch buffer
   memset(artDecodeBuf, 0, sizeof(artDecodeBuf));
   if (jpeg.decode(x0, y0, scale) != 1) {
     Serial.println("[ART] decode failed");
     return false;
   }
-  // copy into the persistent buffer
-  if (!artworkBuf) artworkBuf = (uint16_t *)malloc(sizeof(artDecodeBuf));
-  if (!artworkBuf) return false;
-  memcpy(artworkBuf, artDecodeBuf, sizeof(artDecodeBuf));
+
+  // store in PSRAM (51KB per entry) with per-player cache
+  uint16_t *store = (uint16_t *)ps_malloc(sizeof(artDecodeBuf));
+  if (!store) {
+    Serial.println("[ART] PSRAM alloc failed");
+    return false;
+  }
+  memcpy(store, artDecodeBuf, sizeof(artDecodeBuf));
+
+  // free the slot we are replacing (round-robin)
+  if (artCacheCount < ART_CACHE_MAX) {
+    artCache[artCacheCount].key = ma.players.size() ? (ma.players[ma.activePlayerIndex].player_id + "|" + ma.players[ma.activePlayerIndex].artwork_url) : "";
+    artCache[artCacheCount].buf = store;
+    artCacheCount++;
+  } else {
+    free(artCache[artCacheNext].buf);
+    artCache[artCacheNext].key = ma.players.size() ? (ma.players[ma.activePlayerIndex].player_id + "|" + ma.players[ma.activePlayerIndex].artwork_url) : "";
+    artCache[artCacheNext].buf = store;
+    artCacheNext = (artCacheNext + 1) % ART_CACHE_MAX;
+  }
+
+  artworkBuf = store;
   artworkBufValid = true;
+  Serial.printf("[ART] PSRAM cache entries: %d, heap: %u\n",
+                artCacheCount, ESP.getFreeHeap());
   return true;
 }
 
