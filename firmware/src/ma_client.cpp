@@ -300,8 +300,15 @@ void MusicAssistantClient::parsePlayersJson(const char *json, size_t len) {
     mp.name = p["name"] | mp.player_id;
     mp.available = p["available"] | false;
     mp.powered = p["powered"] | false;
-    mp.state = p["state"] | "idle";
-    mp.volume_level = p["volume_level"] | 0;
+    // MA 2.11 serializes the state as "playback_state"
+    const char *st = p["playback_state"] | (const char *)nullptr;
+    if (!st) st = p["state"] | "idle";
+    mp.state = String(st);
+    if (p["volume_level"].is<int>())
+      mp.volume_level = p["volume_level"].as<int>();
+    else if (p["volume_level"].is<float>())
+      mp.volume_level = (int)(p["volume_level"].as<float>() * 100);  // 0..1 float
+    mp.volume_support = !p["volume_level"].isNull();
     mp.muted = p["volume_muted"] | false;
     JsonObjectConst cm = p["current_media"];
     if (!cm.isNull()) {
@@ -563,9 +570,16 @@ void MusicAssistantClient::parsePlayer(JsonObjectConst p, bool replaceAll) {
       mp.name = p["name"] | mp.name;
       mp.available = p["available"] | mp.available;
       mp.powered = p["powered"] | mp.powered;
-      const char *st = p["state"] | "";
-      if (st[0]) mp.state = st;
-      mp.volume_level = p["volume_level"] | mp.volume_level;
+      const char *st = p["playback_state"] | (const char *)nullptr;
+      if (!st) st = p["state"] | "";
+      if (st[0]) mp.state = String(st);
+      if (!p["volume_level"].isNull()) {
+        if (p["volume_level"].is<int>())
+          mp.volume_level = p["volume_level"].as<int>();
+        else if (p["volume_level"].is<float>())
+          mp.volume_level = (int)(p["volume_level"].as<float>() * 100);
+        mp.volume_support = true;
+      }
       mp.muted = p["volume_muted"] | mp.muted;
       JsonObjectConst cm = p["current_media"];
       if (!cm.isNull()) {

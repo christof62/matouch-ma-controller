@@ -621,14 +621,17 @@ void drawPlayerScreen() {
   MaPlayer &p = ma.players[ma.activePlayerIndex];
 
   uint16_t stateCol = COL_STOP;
-  if (p.state == "playing") stateCol = COL_PLAY;
-  else if (p.state == "paused") stateCol = COL_PAUSE;
+  String st = p.state; st.toLowerCase();
+  if (st == "playing") stateCol = COL_PLAY;
+  else if (st == "paused" || st == "pausing") stateCol = COL_PAUSE;
   Serial.printf("[UI] player screen: state='%s' vol=%d ring=0x%04x\n",
                 p.state.c_str(), p.volume_level, stateCol);
 
   // outer ring in STATE COLOR, filled proportionally to the volume -
-  // shows both status (color) and volume (fill) permanently
-  drawVolumeArc(120, 120, 117, p.volume_level, 6, stateCol, COL_RING_OFF);
+  // shows both status (color) and volume (fill) permanently.
+  // Players without volume support get a full ring instead.
+  int ringVol = p.volume_support ? p.volume_level : 100;
+  drawVolumeArc(120, 120, 117, ringVol, 6, stateCol, COL_RING_OFF);
 
   // album art in the center when available
   bool hasArt = drawArtwork();

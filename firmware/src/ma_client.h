@@ -13,6 +13,7 @@ struct MaPlayer {
   bool powered = false;
   String state;        // "playing" | "paused" | "idle" | "stopped"
   int volume_level = 0;
+  bool volume_support = false;  // player reports a volume_level at all
   bool muted = false;
   String current_title;
   String current_artist;
