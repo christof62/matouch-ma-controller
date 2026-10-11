@@ -82,19 +82,8 @@ JPEGDEC jpeg;
 uint8_t *artworkJpeg = nullptr;
 size_t artworkJpegLen = 0;
 String artworkLoadedFor = "";
-uint16_t *artworkBuf = nullptr;   // decoded, circular-clipped RGB565
+uint16_t *artworkBuf = nullptr;   // decoded, circular-clipped RGB565 (PSRAM)
 bool artworkBufValid = false;
-
-// per-player artwork cache in PSRAM: switching players shows the
-// cover instantly without re-downloading
-#define ART_CACHE_MAX 12
-struct ArtCacheEntry {
-  String key;
-  uint16_t *buf;
-};
-static ArtCacheEntry artCache[ART_CACHE_MAX];
-static int artCacheCount = 0;
-static int artCacheNext = 0;
 bool takeDirty() {
   if (uiDirty) { uiDirty = false; return true; }
   return false;
