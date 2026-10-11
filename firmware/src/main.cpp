@@ -70,6 +70,8 @@ void drawMessage(const char *msg);
 void handleInput();
 void saveConfig();
 void loadConfig();
+void saveSelectedPlayer();
+void restoreSelectedPlayer();
 void markDirty() { uiDirty = true; }
 void drawVolumeOverlay();
 void fetchArtwork();
@@ -239,6 +241,7 @@ void setup() {
   drawMessage("Connecting MA...");
 
   ma.begin(ma_host, ma_port, ma_token, []() { markDirty(); });
+  ma.setPlayersLoadedCallback([]() { restoreSelectedPlayer(); });
   ma.setStatusCallback([](const char *msg) {
     // rolling status log on display (kept simple: last 6 entries)
     static String lines[6];
@@ -341,6 +344,7 @@ void handleInput() {
         int n = (int)ma.players.size();
         if (n > 0) {
           ma.activePlayerIndex = ((ma.activePlayerIndex + delta) % n + n) % n;
+          saveSelectedPlayer();
           markDirty();
         }
         break;
@@ -751,6 +755,28 @@ void drawMenu() {
 // Config persistence
 // ------------------------------------------------------------------
 Preferences prefs;
+
+void saveSelectedPlayer() {
+  if (ma.players.empty()) return;
+  prefs.begin("mactl", false);
+  prefs.putString("selplayer", ma.players[ma.activePlayerIndex].player_id);
+  prefs.end();
+}
+
+void restoreSelectedPlayer() {
+  prefs.begin("mactl", true);
+  String saved = prefs.getString("selplayer", "");
+  prefs.end();
+  if (saved.length() == 0) return;
+  for (size_t i = 0; i < ma.players.size(); i++) {
+    if (ma.players[i].player_id == saved) {
+      ma.activePlayerIndex = (int)i;
+      Serial.printf("[CFG] restored player: %s\n", ma.players[i].name.c_str());
+      return;
+    }
+  }
+  Serial.println("[CFG] saved player not in list, using first");
+}
 
 void loadConfig() {
   prefs.begin("mactl", true);

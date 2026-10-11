@@ -328,6 +328,7 @@ void MusicAssistantClient::parsePlayersJson(const char *json, size_t len) {
   }
   Serial.printf("[MA] parsed %d players\n", (int)players.size());
   if (activePlayerIndex >= (int)players.size()) activePlayerIndex = 0;
+  if (_onPlayersLoaded) _onPlayersLoaded();  // UI restores saved selection
   if (_onEvent) _onEvent();
 }
 
