@@ -242,26 +242,7 @@ void setup() {
 
   ma.begin(ma_host, ma_port, ma_token, []() { markDirty(); });
   ma.setPlayersLoadedCallback([]() { restoreSelectedPlayer(); });
-  ma.setStatusCallback([](const char *msg) {
-    // rolling status log on display (kept simple: last 6 entries)
-    static String lines[6];
-    static int idx = 0;
-    lines[idx] = String(msg);
-    idx = (idx + 1) % 6;
-    gfx->fillScreen(BLACK);
-    gfx->setTextSize(1);
-    gfx->setTextColor(COL_ACCENT);
-    gfx->setCursor(20, 25);
-    gfx->println("MA status log:");
-    gfx->setTextColor(COL_FG);
-    for (int i = 0; i < 6; i++) {
-      int l = (idx + i) % 6;
-      if (lines[l].length()) {
-        gfx->setCursor(20, 50 + i * 22);
-        gfx->println(lines[l].substring(0, 26));
-      }
-    }
-  });
+
 }
 
 // ------------------------------------------------------------------
@@ -669,13 +650,6 @@ void drawPlayerScreen() {
     gfx->println(p.current_artist.substring(0, 30));
   }
 
-  gfx->setTextColor(stateCol);
-  gfx->setCursor(95, 185);
-  gfx->println(p.state);
-  gfx->setTextColor(COL_ACCENT);
-  gfx->setCursor(105, 205);
-  gfx->print(vol);
-  gfx->println("%");
 }
 
 void drawVolumeScreen() {
