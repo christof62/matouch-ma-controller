@@ -76,8 +76,8 @@ extern bool artworkBufValid;
 extern uint16_t *artworkBuf;
 #define MARQUEE_INTERVAL_MS 30000UL  // start a run every 30s
 #define MARQUEE_SPEED_MS 80UL        // pixel step time
-#define MARQUEE_BAND_Y 108           // band top: centered ON the cover (25px band)
-#define MARQUEE_BAND_H 25            // 1px more than the 24px size-3 font
+#define MARQUEE_BAND_Y 109           // band top: centered (22px band)
+#define MARQUEE_BAND_H 22            // visible glyph height (~21px) + 1
 #define COL_MARQUEE_BG RGB565(0x30, 0x30, 0x30)  // dark grey backing band
 #define MARQUEE_TEXT_SIZE 3         // extra large font (24px)
 #define MARQUEE_MAX_LEN 64
@@ -131,18 +131,26 @@ void drawMarqueeFrame() {
     int halfW = (int)sqrtf((float)dyr);
     int rowX0 = ccx - halfW;
     int rowW = 2 * halfW;
-    // rows above/below the 24px text area: just the grey band background
-    if (row == 0 || row >= 25 - 1) {
+    // text rows: draw all chars overlapping the row, then clear the edges
+    // (a partially visible char right of the clip would leave pixels, so we
+    //  grey out the gap between the last glyph and the row edge explicitly)
+    if (row >= 1 && row < MARQUEE_BAND_H - 1) {
+      int lastGlyphEnd = rowX0;
+      for (int i = 0; i < marqueeText.length(); i++) {
+        int cxPos = x + i * 18;
+        if (cxPos + 18 <= rowX0) continue;          // fully left of the row
+        if (cxPos >= rowX0 + rowW) break;           // fully right: done
+        char c[2] = { marqueeText[i], '\0' };
+        gfx->setCursor(cxPos, MARQUEE_BAND_Y + 1);
+        gfx->print(c);                              // opaque glyph
+        lastGlyphEnd = cxPos + 18;
+      }
+      // clear remaining pixels of this row (left gap + right gap)
+      if (lastGlyphEnd < rowX0 + rowW)
+        gfx->fillRect(lastGlyphEnd, y, rowX0 + rowW - lastGlyphEnd, 1, COL_MARQUEE_BG);
+    } else {
+      // 1px edge rows above/below the text: plain grey band
       gfx->fillRect(rowX0, y, rowW, 1, COL_MARQUEE_BG);
-      continue;
-    }
-    // draw the visible text characters of this row (clip per char)
-    for (int i = 0; i < marqueeText.length(); i++) {
-      int cxPos = x + i * 18;
-      if (cxPos + 18 <= rowX0 || cxPos >= rowX0 + rowW) continue;
-      char c[2] = { marqueeText[i], '\0' };
-      gfx->setCursor(cxPos, MARQUEE_BAND_Y + 1);
-      gfx->print(c);
     }
   }
 }
