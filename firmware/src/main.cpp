@@ -648,12 +648,15 @@ void fetchArtwork() {
   // request only the size we actually display (216px circle): replaces the
   // size=NNN parameter of the MA imageproxy -> ~4x smaller/faster downloads
   // that no longer stall the websocket (which caused server disconnects)
+  // CAREFUL: the pattern sits INSIDE the query string as "&size=512" or
+  // "?size=512" - keep the leading '?'/'&' of THIS parameter and only
+  // replace the number, so following parameters (e.g. fmt=jpg) survive.
   if (url.indexOf("imageproxy") >= 0 && url.indexOf("size=") >= 0) {
     int sp = url.indexOf("size=");
-    int end = url.indexOf('&', sp);
-    String head = url.substring(0, sp);
-    String tail = (end >= 0) ? url.substring(end) : "";
-    url = head + "size=240" + tail;
+    int numStart = sp + 5;                       // first digit position
+    int numEnd = numStart;
+    while (numEnd < (int)url.length() && isdigit(url[numEnd])) numEnd++;
+    url = url.substring(0, numStart) + "240" + url.substring(numEnd);
   }
   http.begin(client, url);
   http.setTimeout(5000);
