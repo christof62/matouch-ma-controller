@@ -64,6 +64,7 @@ void drawScreen();
 void drawPlayerScreen();
 void drawVolumeScreen();
 void updateVolumeScreen(bool force);
+void drawMarqueeFrame();
 void drawPlayerList();
 void drawMenu();
 void drawMessage(const char *msg);
@@ -72,6 +73,19 @@ void saveConfig();
 void loadConfig();
 void saveSelectedPlayer();
 void restoreSelectedPlayer();
+// marquee: title/artist ticker in large text across the lower display area
+#define MARQUEE_INTERVAL_MS 30000UL  // start a run every 30s
+#define MARQUEE_SPEED_MS 80UL        // pixel step time
+#define MARQUEE_BAND_Y 196           // band top
+#define MARQUEE_BAND_H 32            // band height (2x16px font = 32)
+#define MARQUEE_TEXT_SIZE 2         // large font
+#define MARQUEE_MAX_LEN 64
+
+uint32_t marqueeNextStart = 0;   // when the next run begins
+int32_t marqueeOffset = -1;      // -1 = idle, otherwise x offset
+uint32_t marqueeLastStep = 0;
+String marqueeText = "";
+
 // album artwork: circular mask reaching just inside the volume ring
 // (ring inner edge ~r108 -> mask radius 108 -> diameter 216)
 #define ART_SIZE 216
@@ -79,6 +93,27 @@ static uint16_t *artDecodeBuf = nullptr;  // PSRAM, allocated in setup()
 static int artImgX0 = 0, artImgY0 = 0, artImgW = 0, artImgH = 0;
 
 void markDirty() { uiDirty = true; }
+
+// draw one frame of the marquee at the current offset (clipped to the band)
+void drawMarqueeFrame() {
+  int bandW = 216;                       // usable width inside the ring
+  int x0 = (SCREEN_W - bandW) / 2;
+  // clear the band
+  gfx->fillRect(x0, MARQUEE_BAND_Y, bandW, MARQUEE_BAND_H, BLACK);
+  if (marqueeOffset < 0) return;         // idle: band cleared
+  int textW = marqueeText.length() * 12; // size-2 font: ~12px per char
+  gfx->setTextSize(MARQUEE_TEXT_SIZE);
+  gfx->setTextColor(COL_FG);
+  // draw with manual clipping inside the band
+  int x = x0 - marqueeOffset;
+  for (int i = 0; i < marqueeText.length(); i++) {
+    int cx = x + i * 12;
+    if (cx + 12 <= x0 || cx >= x0 + bandW) continue;
+    char c[2] = { marqueeText[i], '\0' };
+    gfx->setCursor(cx, MARQUEE_BAND_Y + 8);
+    gfx->print(c);
+  }
+}
 void drawVolumeOverlay();
 void fetchArtwork();
 bool drawArtwork();          // returns true when artwork is on screen
@@ -283,6 +318,31 @@ void loop() {
   if (millis() - lastArtTry > 10000) {
     lastArtTry = millis();
     fetchArtwork();
+  }
+
+  // marquee ticker in the player screen
+  if (screen == SCR_PLAYER && !ma.players.empty()) {
+    if (marqueeOffset < 0) {
+      // idle: start a new run when the interval elapsed
+      if (marqueeText.length() && millis() >= marqueeNextStart) {
+        marqueeOffset = 0;
+        marqueeLastStep = millis();
+        drawMarqueeFrame();
+      }
+    } else if (millis() - marqueeLastStep >= MARQUEE_SPEED_MS) {
+      marqueeLastStep = millis();
+      marqueeOffset += 4;  // 4px per step
+      int textW = marqueeText.length() * 12;
+      int bandW = 216;
+      if (marqueeOffset > textW + bandW) {
+        // run finished: clear and schedule the next one
+        marqueeOffset = -1;
+        marqueeNextStart = millis() + MARQUEE_INTERVAL_MS;
+        drawMarqueeFrame();  // clears the band
+      } else {
+        drawMarqueeFrame();
+      }
+    }
   }
 
   static uint32_t lastDraw = 0;
@@ -732,13 +792,11 @@ void drawPlayerScreen() {
   bool hasArt = drawArtwork();
 
   if (hasArt) {
-    // text below the artwork
-    gfx->setTextSize(1);
-    gfx->setCursor(15, 178);
-    gfx->println(p.current_title.substring(0, 30));
-    gfx->setTextColor(COL_DIM);
-    gfx->setCursor(15, 192);
-    gfx->println(p.current_artist.substring(0, 30));
+    // title/artist shown as scrolling marquee in the lower band (large text)
+    marqueeText = p.current_title.substring(0, 28) + "  -  " +
+                  p.current_artist.substring(0, 28);
+    // draw the static band content for this frame
+    if (marqueeOffset < 0) drawMarqueeFrame();
   } else {
     gfx->setTextSize(2);
     gfx->setCursor(15, 88);
