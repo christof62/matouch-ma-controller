@@ -341,7 +341,7 @@ void setup() {
   // RF tuning for maximum link margin: the router-side RSSI was weak even
   // close to the AP - max TX power ensures our packets arrive there.
   // 78 = 19.5dBm (ESP32-S3 max); lower values SAVE power but hurt weak links.
-  WiFi.setTxPower(78);
+  WiFi.setTxPower(WIFI_POWER_19_5dBm);
 
   drawMessage("Connecting MA...");
 
