@@ -338,6 +338,10 @@ void setup() {
   // sleeps the WiFi radio between beacons -> micro-drops under load
   // (WS + HTTP artwork + SPI display running at once).
   WiFi.setSleep(false);
+  // RF tuning for maximum link margin: the router-side RSSI was weak even
+  // close to the AP - max TX power ensures our packets arrive there.
+  // 78 = 19.5dBm (ESP32-S3 max); lower values SAVE power but hurt weak links.
+  WiFi.setTxPower(78);
 
   drawMessage("Connecting MA...");
 
