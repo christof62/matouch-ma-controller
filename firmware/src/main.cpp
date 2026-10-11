@@ -924,12 +924,14 @@ void drawPlayerScreen() {
                       artworkUriFor == p.current_uri;
   bool hasArt = artIsCurrent ? drawArtwork() : false;
 
-  if (hasArt) {
-    // title/artist shown as scrolling marquee in the lower band (large text)
-    marqueeText = utf8ToAscii(p.current_title.substring(0, 28)) + "  -  " +
-                  utf8ToAscii(p.current_artist.substring(0, 28));
-    // (the marquee draws itself in the loop; nothing to do here at idle)
-  } else {
+  // keep the marquee in sync with the CURRENT track in BOTH modes:
+  // without this the ticker kept showing the previous title while the
+  // screen already displayed the new one (text mode while waiting for
+  // the cover image). Updated here on every player screen redraw.
+  marqueeText = utf8ToAscii(p.current_title.substring(0, 28)) + "  -  " +
+                utf8ToAscii(p.current_artist.substring(0, 28));
+
+  if (!hasArt) {
     // no cover: bigger title + artist text
     gfx->setTextSize(2);
     gfx->setTextColor(COL_FG);
