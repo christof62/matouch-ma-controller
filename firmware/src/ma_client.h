@@ -78,6 +78,7 @@ public:
 private:
   void sendCommand(const char *command, JsonObject args);
   void handleIncoming(uint8_t *payload, size_t length);
+  MaPlayer parsePlayerObject(JsonObjectConst p);
   void parsePlayer(JsonObjectConst p, bool replaceAll);
   void connect();
   void disconnect();

@@ -11,18 +11,6 @@
 
 static const char *stateNames[] = {"playing", "paused", "idle", "stopped"};
 
-static void wsEvent(WStype_t type, uint8_t *payload, size_t length, void *arg) {
-  MusicAssistantClient *self = (MusicAssistantClient *)arg;
-  switch (type) {
-    case WStype_CONNECTED:
-      self->getState();  // no-op; state handled below via friend access not needed
-      break;
-    default:
-      break;
-  }
-  (void)payload;
-  (void)length;
-}
 
 void MusicAssistantClient::begin(const char *host, uint16_t port, const char *token, MaEventCallback cb) {
   _host = host;
@@ -319,58 +307,60 @@ void MusicAssistantClient::parsePlayersJson(const char *json, size_t len) {
     }
   }
   for (JsonObjectConst p : arr) {
-    MaPlayer mp;
-    mp.player_id = p["player_id"].as<String>();
-    if (mp.player_id.length() == 0) continue;
-    mp.name = p["name"] | mp.player_id;
-    mp.available = p["available"] | false;
-    mp.powered = p["powered"] | false;
-    // MA 2.11 serializes the state as "playback_state"
-    const char *st = p["playback_state"] | (const char *)nullptr;
-    if (!st) st = p["state"] | "idle";
-    mp.state = String(st);
-    if (p["volume_level"].is<int>())
-      mp.volume_level = p["volume_level"].as<int>();
-    else if (p["volume_level"].is<float>())
-      mp.volume_level = (int)(p["volume_level"].as<float>() * 100);  // 0..1 float
-    mp.volume_support = !p["volume_level"].isNull();
-    mp.muted = p["volume_muted"] | false;
-    JsonObjectConst cm = p["current_media"];
-    if (!cm.isNull()) {
-      mp.current_title = cm["title"] | "";
-      mp.current_artist = cm["artist"] | "";
-      mp.current_album = cm["album"] | "";
-      // DEBUG: dump the raw current_media of the first player that has one
-      mp.current_uri = cm["uri"] | "";
-      static bool cmDumped = false;
-      if (!cmDumped) {
-        cmDumped = true;
-        String out;
-        serializeJson(cm, out);
-        Serial.printf("[DBG] current_media: %s\n", out.c_str());
-      }
-      // image can be an object or array of objects with a "url"/"path"
-      JsonVariantConst img = cm["image"];
-      if (img.is<JsonArrayConst>()) {
-        JsonArrayConst ia = img.as<JsonArrayConst>();
-        if (ia.size() > 0 && ia[0].is<JsonObjectConst>()) {
-          const char *u = ia[0]["url"] | (const char *)nullptr;
-          if (!u) u = ia[0]["path"];
-          if (u) mp.artwork_url = String(u);
-        }
-      } else if (img.is<JsonObjectConst>()) {
-        const char *u = img["url"] | (const char *)nullptr;
-        if (!u) u = img["path"];
-        if (u) mp.artwork_url = String(u);
-      }
+    if (p["player_id"].is<const char *>()) {
+      players.push_back(parsePlayerObject(p));
+      MaPlayer &mp = players.back();
+      Serial.printf("[MA] player: %s (%s)\n", mp.name.c_str(), mp.state.c_str());
     }
-    Serial.printf("[MA] player: %s (%s)\n", mp.name.c_str(), mp.state.c_str());
-    players.push_back(mp);
   }
   Serial.printf("[MA] parsed %d players\n", (int)players.size());
   if (activePlayerIndex >= (int)players.size()) activePlayerIndex = 0;
   if (_onPlayersLoaded) _onPlayersLoaded();  // UI restores saved selection
   if (_onEvent) _onEvent();
+}
+
+// Build one MaPlayer from a players/all entry (shared by the HTTP and the
+// WebSocket result path). Returns an invalid MaPlayer (empty player_id)
+// if the entry has no usable player_id.
+MaPlayer MusicAssistantClient::parsePlayerObject(JsonObjectConst p) {
+  MaPlayer mp;
+  mp.player_id = p["player_id"].as<String>();
+  if (mp.player_id.length() == 0) return mp;
+  mp.name = p["name"] | mp.player_id;
+  mp.available = p["available"] | false;
+  mp.powered = p["powered"] | false;
+  // MA 2.11 serializes the state as "playback_state"
+  const char *st = p["playback_state"] | (const char *)nullptr;
+  if (!st) st = p["state"] | "idle";
+  mp.state = String(st);
+  if (p["volume_level"].is<int>())
+    mp.volume_level = p["volume_level"].as<int>();
+  else if (p["volume_level"].is<float>())
+    mp.volume_level = (int)(p["volume_level"].as<float>() * 100);  // 0..1 float
+  mp.volume_support = !p["volume_level"].isNull();
+  mp.muted = p["volume_muted"] | false;
+  JsonObjectConst cm = p["current_media"];
+  if (!cm.isNull()) {
+    mp.current_title = cm["title"] | "";
+    mp.current_artist = cm["artist"] | "";
+    mp.current_album = cm["album"] | "";
+    mp.current_uri = cm["uri"] | "";
+    // image can be an object or array of objects with a "url"/"path"
+    JsonVariantConst img = cm["image"];
+    if (img.is<JsonArrayConst>()) {
+      JsonArrayConst ia = img.as<JsonArrayConst>();
+      if (ia.size() > 0 && ia[0].is<JsonObjectConst>()) {
+        const char *u = ia[0]["url"] | (const char *)nullptr;
+        if (!u) u = ia[0]["path"];
+        if (u) mp.artwork_url = String(u);
+      }
+    } else if (img.is<JsonObjectConst>()) {
+      const char *u = img["url"] | (const char *)nullptr;
+      if (!u) u = img["path"];
+      if (u) mp.artwork_url = String(u);
+    }
+  }
+  return mp;
 }
 
 void MusicAssistantClient::fetchFavorites() {
@@ -530,24 +520,13 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
         Serial.printf("[MA] players/all: %d players\n", (int)arr.size());
         players.clear();
         for (JsonObjectConst p : arr) {
-          MaPlayer mp;
-          mp.player_id = p["player_id"].as<String>();
-          mp.name = p["name"] | mp.player_id;
-          mp.available = p["available"] | false;
-          mp.powered = p["powered"] | false;
-          mp.state = p["state"] | "idle";
-          mp.volume_level = p["volume_level"] | 0;
-          mp.muted = p["volume_muted"] | false;
-          JsonObjectConst cm = p["current_media"];
-          if (!cm.isNull()) {
-            mp.current_title = cm["title"] | "";
-            mp.current_artist = cm["artist"] | "";
-            mp.current_album = cm["album"] | "";
-          }
+          MaPlayer mp = parsePlayerObject(p);
+          if (mp.player_id.length() == 0) continue;
           Serial.printf("[MA] player: %s (%s)\n", mp.name.c_str(), mp.player_id.c_str());
           players.push_back(mp);
         }
         if (activePlayerIndex >= (int)players.size()) activePlayerIndex = 0;
+        if (_onPlayersLoaded) _onPlayersLoaded();  // restore saved selection
         if (_onEvent) _onEvent();
         return;
       }
@@ -642,6 +621,8 @@ void MusicAssistantClient::parsePlayer(JsonObjectConst p, bool replaceAll) {
       return;
     }
   }
-  // not found: full refresh
-  fetchPlayers();
+  // not found (e.g. player_added raced the event): defer a full refresh to
+  // the loop - NEVER call fetchPlayers() here, it does a BLOCKING http call
+  // and this runs inside the websocket event callback
+  _pendingPlayersFetch = true;
 }
