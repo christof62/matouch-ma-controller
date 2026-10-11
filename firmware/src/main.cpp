@@ -111,21 +111,34 @@ bool drawArtwork();
 bool decodeArtworkToBuffer();
 
 // draw one frame of the marquee at the current offset (clipped to the band)
+// The band lives strictly INSIDE the cover circle (r=108 around 120,120):
+// each row clears/draws only the width the circle allows at that height,
+// so no ring pixels are touched and no leftovers remain at the sides.
 void drawMarqueeFrame() {
-  int bandW = 216;                       // usable width inside the ring
-  int x0 = (SCREEN_W - bandW) / 2;
-  // dark grey backing band while the text runs (simple + readable)
-  gfx->fillRect(x0, MARQUEE_BAND_Y, bandW, MARQUEE_BAND_H, COL_MARQUEE_BG);
-  if (marqueeOffset < 0) return;         // idle: band just cleared
+  const int ccx = 120, ccy = 120, cr = 108;  // cover circle geometry
   gfx->setTextSize(MARQUEE_TEXT_SIZE);
   gfx->setTextColor(COL_FG);
-  int x = x0 - marqueeOffset;
-  for (int i = 0; i < marqueeText.length(); i++) {
-    int cxPos = x + i * 18;
-    if (cxPos + 18 <= x0 || cxPos >= x0 + bandW) continue;
-    char c[2] = { marqueeText[i], '\0' };
-    gfx->setCursor(cxPos, MARQUEE_BAND_Y);
-    gfx->print(c);
+  int x = -marqueeOffset;  // text x in screen coords (band starts at left edge)
+
+  for (int row = 0; row < MARQUEE_BAND_H; row++) {
+    int y = MARQUEE_BAND_Y + row;
+    int dy = y - ccy;
+    int dyr = cr * cr - dy * dy;
+    if (dyr <= 0) continue;              // row outside the circle: nothing
+    int halfW = (int)sqrtf((float)dyr);
+    int rowX0 = ccx - halfW;
+    int rowW = 2 * halfW;
+    // clear this row's band area to the backing color
+    gfx->fillRect(rowX0, y, rowW, 1, marqueeOffset < 0 ? BLACK : COL_MARQUEE_BG);
+    if (marqueeOffset < 0) continue;     // idle: row cleared, no text
+    // draw the visible text characters of this row (clip per char)
+    for (int i = 0; i < marqueeText.length(); i++) {
+      int cxPos = x + i * 18;
+      if (cxPos + 18 <= rowX0 || cxPos >= rowX0 + rowW) continue;
+      char c[2] = { marqueeText[i], '\0' };
+      gfx->setCursor(cxPos, MARQUEE_BAND_Y);
+      gfx->print(c);
+    }
   }
 }
 
@@ -338,9 +351,7 @@ void loop() {
         // redraw re-blits the cover -> nothing of the band remains
         marqueeOffset = -1;
         marqueeNextStart = millis() + MARQUEE_INTERVAL_MS;
-        int x0e = (SCREEN_W - 216) / 2;
-        gfx->fillRect(x0e, MARQUEE_BAND_Y, 216, MARQUEE_BAND_H, BLACK);
-        markDirty();  // full player redraw incl. cover
+        markDirty();  // full player redraw restores cover + ring cleanly
       } else {
         drawMarqueeFrame();
       }
