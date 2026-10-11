@@ -383,8 +383,10 @@ void loop() {
   ma.loop();
   handleInput();
 
+  // periodic full refresh (rare - live events keep the state fresh);
+  // this is a BLOCKING ~20KB download, so keep the interval generous
   static uint32_t lastPoll = 0;
-  if (ma.isConnected() && millis() - lastPoll > 60000) {
+  if (ma.isConnected() && ma.players.size() > 0 && millis() - lastPoll > 300000) {
     lastPoll = millis();
     ma.fetchPlayers();
   }

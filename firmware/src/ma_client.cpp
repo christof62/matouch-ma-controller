@@ -95,10 +95,10 @@ void MusicAssistantClient::loop() {
   // is reachable from WiFi at all (catches AP isolation / wrong IP / firewall)
   if (_state == MaConnState::Connecting || _state == MaConnState::Disconnected) {
     static uint32_t lastProbe = 0;
-    if (millis() - lastProbe > 15000) {
+    if (millis() - lastProbe > 30000) {
       lastProbe = millis();
       WiFiClient probe;
-      probe.setTimeout(3000);
+      probe.setTimeout(1000);
       bool ok = probe.connect(_host.c_str(), _port);
       Serial.printf("[MA] TCP probe %s:%u -> %s\n", _host.c_str(), _port, ok ? "OK" : "FAILED");
       _lastProbeResult = ok ? 1 : -1;
@@ -497,8 +497,14 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
         _authed = true;
         _state = MaConnState::Authenticated;
         Serial.println("[MA] authenticated OK");
-        status("auth OK -> fetch players");
-        _pendingPlayersFetch = true;
+        if (players.empty()) {
+          // initial connect: we need the player list (blocking download)
+          _pendingPlayersFetch = true;
+        } else {
+          // reconnect: keep the existing list; live events refresh it and
+          // the periodic poll fills gaps - avoids multi-second blocking
+          Serial.println("[MA] reconnect: keeping cached players");
+        }
         if (_onEvent) _onEvent();
         return;
       }
