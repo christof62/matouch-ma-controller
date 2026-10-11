@@ -681,11 +681,18 @@ void fetchArtwork() {
       if (artworkJpeg) {
         WiFiClient *stream = http.getStreamPtr();
         size_t read = 0;
+        uint32_t dlStart = millis();
         while (read < (size_t)len) {
           size_t n = stream->readBytes(artworkJpeg + read, len - read);
-          if (n == 0) break;
-          read += n;
+          if (n == 0) {
+            // stalled (connection issue): abort so no half-open socket lingers
+            if (millis() - dlStart > 8000) break;
+            delay(5);
+          } else {
+            read += n;
+          }
         }
+        stream->stop();          // release the TCP connection FIRST
         artworkJpegLen = read;
         artworkLoadedFor = key;
         artworkUriFor = p.current_uri;   // cover belongs to THIS track
