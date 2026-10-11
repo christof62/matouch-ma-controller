@@ -623,8 +623,8 @@ void drawPlayerScreen() {
   if (p.state == "playing") stateCol = COL_PLAY;
   else if (p.state == "paused") stateCol = COL_PAUSE;
 
-  int vol = p.volume_level;
-  drawVolumeArc(120, 120, 117, vol, 6, COL_ACCENT2, COL_RING_OFF);
+  // No permanent volume ring: it only appears as overlay while turning.
+  // The state ring stays as the only permanent indicator.
   drawThickArc(120, 120, 108, 0, TWO_PI_F, 2, stateCol);
 
   // album art in the center when available
