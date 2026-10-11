@@ -548,20 +548,6 @@ bool drawArtwork() {
 
 bool decodeArtworkToBuffer() {
   if (!artworkJpeg || artworkJpegLen == 0) return false;
-
-  // check the per-player cache first (instant switch-back)
-  if (ma.players.size() > 0) {
-    MaPlayer &p = ma.players[ma.activePlayerIndex];
-    String key = p.player_id + "|" + p.artwork_url;
-    for (int i = 0; i < artCacheCount; i++) {
-      if (artCache[i].key == key) {
-        artworkBuf = artCache[i].buf;
-        artworkBufValid = true;
-        return true;  // cached in PSRAM
-      }
-    }
-  }
-
   if (jpeg.openRAM(artworkJpeg, artworkJpegLen, jpegDrawCallback) != 1) {
     Serial.println("[ART] openRAM failed");
     return false;
@@ -577,37 +563,21 @@ bool decodeArtworkToBuffer() {
   int y0 = (ART_SIZE - h) / 2;
   Serial.printf("[ART] src %dx%d -> buf %dx%d scale 1/%d\n",
                 jpeg.getWidth(), jpeg.getHeight(), w, h, 1 << scale);
-  // zero the decode scratch buffer
   memset(artDecodeBuf, 0, sizeof(artDecodeBuf));
   if (jpeg.decode(x0, y0, scale) != 1) {
     Serial.println("[ART] decode failed");
     return false;
   }
-
-  // store in PSRAM (51KB per entry) with per-player cache
-  uint16_t *store = (uint16_t *)ps_malloc(sizeof(artDecodeBuf));
-  if (!store) {
-    Serial.println("[ART] PSRAM alloc failed");
-    return false;
+  // (re)allocate the persistent buffer in PSRAM
+  if (!artworkBuf) {
+    artworkBuf = (uint16_t *)ps_malloc(sizeof(artDecodeBuf));
+    if (!artworkBuf) {
+      Serial.println("[ART] PSRAM alloc failed");
+      return false;
+    }
   }
-  memcpy(store, artDecodeBuf, sizeof(artDecodeBuf));
-
-  // free the slot we are replacing (round-robin)
-  if (artCacheCount < ART_CACHE_MAX) {
-    artCache[artCacheCount].key = ma.players.size() ? (ma.players[ma.activePlayerIndex].player_id + "|" + ma.players[ma.activePlayerIndex].artwork_url) : "";
-    artCache[artCacheCount].buf = store;
-    artCacheCount++;
-  } else {
-    free(artCache[artCacheNext].buf);
-    artCache[artCacheNext].key = ma.players.size() ? (ma.players[ma.activePlayerIndex].player_id + "|" + ma.players[ma.activePlayerIndex].artwork_url) : "";
-    artCache[artCacheNext].buf = store;
-    artCacheNext = (artCacheNext + 1) % ART_CACHE_MAX;
-  }
-
-  artworkBuf = store;
+  memcpy(artworkBuf, artDecodeBuf, sizeof(artDecodeBuf));
   artworkBufValid = true;
-  Serial.printf("[ART] PSRAM cache entries: %d, heap: %u\n",
-                artCacheCount, ESP.getFreeHeap());
   return true;
 }
 
