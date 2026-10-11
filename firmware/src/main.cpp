@@ -641,27 +641,37 @@ void fetchArtwork() {
   String key = p.player_id + "|" + p.artwork_url;
   if (artworkLoadedFor == key) return;
 
-  WiFiClient client;
-  HTTPClient http;
   String url = p.artwork_url;
   if (!url.startsWith("http")) url = String("http://") + ma_host + ":" + String(ma_port) + url;
-  // request only the size we actually display (216px circle): replaces the
-  // size=NNN parameter of the MA imageproxy -> ~4x smaller/faster downloads
-  // that no longer stall the websocket (which caused server disconnects)
-  // CAREFUL: the pattern sits INSIDE the query string as "&size=512" or
-  // "?size=512" - keep the leading '?'/'&' of THIS parameter and only
-  // replace the number, so following parameters (e.g. fmt=jpg) survive.
-  if (url.indexOf("imageproxy") >= 0 && url.indexOf("size=") >= 0) {
-    int sp = url.indexOf("size=");
-    int numStart = sp + 5;                       // first digit position
+
+  // try a smaller size first (256: power of two, ~4x less data so the
+  // download does not stall the websocket), fall back to the original URL
+  // if the server rejects the modified one (e.g. unknown size step).
+  String smallUrl = url;
+  if (smallUrl.indexOf("imageproxy") >= 0 && smallUrl.indexOf("size=") >= 0) {
+    int sp = smallUrl.indexOf("size=");
+    int numStart = sp + 5;
     int numEnd = numStart;
-    while (numEnd < (int)url.length() && isdigit(url[numEnd])) numEnd++;
-    url = url.substring(0, numStart) + "240" + url.substring(numEnd);
+    while (numEnd < (int)smallUrl.length() && isdigit(smallUrl[numEnd])) numEnd++;
+    smallUrl = smallUrl.substring(0, numStart) + "256" + smallUrl.substring(numEnd);
   }
-  http.begin(client, url);
+
+  WiFiClient client;
+  HTTPClient http;
   http.setTimeout(5000);
-  Serial.printf("[ART] GET: %s\n", url.c_str());  // DEBUG: the exact URL
-  int code = http.GET();
+  int code = -1;
+  if (smallUrl != url) {
+    http.begin(client, smallUrl);
+    code = http.GET();
+    if (code != 200) {
+      Serial.printf("[ART] size-256 rejected (%d), falling back to original\n", code);
+      http.end();
+    }
+  }
+  if (code != 200) {
+    http.begin(client, url);
+    code = http.GET();
+  }
   if (code == 200) {
     int len = http.getSize();
     if (len > 0 && len < 200000) {
