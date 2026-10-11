@@ -572,19 +572,9 @@ void MusicAssistantClient::parsePlayer(JsonObjectConst p, bool replaceAll) {
         mp.current_title = cm["title"] | "";
         mp.current_artist = cm["artist"] | "";
         mp.current_album = cm["album"] | "";
-        JsonVariantConst img = cm["image"];
-        if (img.is<JsonArrayConst>()) {
-          JsonArrayConst ia = img.as<JsonArrayConst>();
-          if (ia.size() > 0 && ia[0].is<JsonObjectConst>()) {
-            const char *u = ia[0]["url"] | (const char *)nullptr;
-            if (!u) u = ia[0]["path"];
-            if (u) mp.artwork_url = String(u);
-          }
-        } else if (img.is<JsonObjectConst>()) {
-          const char *u = img["url"] | (const char *)nullptr;
-          if (!u) u = img["path"];
-          if (u) mp.artwork_url = String(u);
-        }
+        // MA 2.11 sends the cover as simple "image_url" string
+        const char *u = cm["image_url"] | (const char *)nullptr;
+        if (u) mp.artwork_url = String(u);
       }
       return;
     }
