@@ -272,6 +272,7 @@ void MusicAssistantClient::parsePlayersJson(const char *json, size_t len) {
   f0["volume_level"] = true;
   f0["volume_muted"] = true;
   JsonObject fcm = f0["current_media"].to<JsonObject>();
+  fcm["uri"] = true;
   fcm["title"] = true;
   fcm["artist"] = true;
   fcm["album"] = true;
@@ -610,9 +611,24 @@ void MusicAssistantClient::parsePlayer(JsonObjectConst p, bool replaceAll) {
         mp.current_artist = cm["artist"] | "";
         mp.current_album = cm["album"] | "";
         mp.current_uri = cm["uri"] | mp.current_uri;
-        // MA 2.11 sends the cover as simple "image_url" string
-        const char *u = cm["image_url"] | (const char *)nullptr;
-        if (u) mp.artwork_url = String(u);
+        // MA 2.11 sends the cover as simple "image_url" string.
+        // A new track often arrives with image_url:null first (artwork is
+        // resolved asynchronously) - the OLD url must be cleared so the
+        // previous track's cover is not re-downloaded for the new track.
+        if (cm["image_url"].is<const char *>()) {
+          mp.artwork_url = String(cm["image_url"].as<const char *>());
+        } else if (!cm["image_url"].isNull()) {
+          mp.artwork_url = "";
+        }
+        // explicit null on a NEW track (uri changed) clears the stale url
+        if (cm["image_url"].isNull() && mp.artwork_url.length() > 0) {
+          static String lastClearedUri = "";
+          String thisUri = cm["uri"] | "";
+          if (thisUri.length() && thisUri != lastClearedUri) {
+            lastClearedUri = thisUri;
+            mp.artwork_url = "";  // fresh track: no artwork (yet)
+          }
+        }
       }
       return;
     }
