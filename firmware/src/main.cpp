@@ -105,6 +105,41 @@ uint16_t *artworkBuf = nullptr;   // decoded, circular-clipped RGB565 (PSRAM)
 bool artworkBufValid = false;
 
 void markDirty() { uiDirty = true; }
+
+// Convert UTF-8 special chars to the closest GFX-font representation.
+// The built-in font is ASCII-only (32..127); UTF-8 Umlaute are 2-byte
+// sequences that would render as garbage. We map them to "a/Umlaut-style"
+// replacements since the font has no ä/ö/ü glyphs.
+String utf8ToAscii(const String &in) {
+  String out = "";
+  out.reserve(in.length());
+  for (unsigned int i = 0; i < in.length(); i++) {
+    uint8_t c = (uint8_t)in[i];
+    if (c < 0x80) { out += (char)c; continue; }
+    // two-byte UTF-8: 110xxxxx 10xxxxxx
+    if ((c & 0xE0) == 0xC0 && i + 1 < in.length()) {
+      uint8_t c2 = (uint8_t)in[i + 1];
+      uint16_t cp = ((c & 0x1F) << 6) | (c2 & 0x3F);
+      i++;
+      switch (cp) {
+        case 0xE4: out += "ae"; break;  // ä
+        case 0xF6: out += "oe"; break;  // ö
+        case 0xFC: out += "ue"; break;  // ü
+        case 0xC4: out += "Ae"; break;  // Ä
+        case 0xD6: out += "Oe"; break;  // Ö
+        case 0xDC: out += "Ue"; break;  // Ü
+        case 0xDF: out += "ss"; break;  // ß
+        default:
+          if (cp >= 0xC0 && cp <= 0xFF && cp != 0xD7 && cp != 0xF7) {
+            out += (char)cp;  // Latin-1 range the font MIGHT have
+          }
+          break;
+      }
+    }
+    // 3+ byte sequences: skip
+  }
+  return out;
+}
 bool takeDirty() {
   if (uiDirty) { uiDirty = false; return true; }
   return false;
@@ -817,19 +852,19 @@ void drawPlayerScreen() {
 
   if (hasArt) {
     // title/artist shown as scrolling marquee in the lower band (large text)
-    marqueeText = p.current_title.substring(0, 28) + "  -  " +
-                  p.current_artist.substring(0, 28);
+    marqueeText = utf8ToAscii(p.current_title.substring(0, 28)) + "  -  " +
+                  utf8ToAscii(p.current_artist.substring(0, 28));
     // (the marquee draws itself in the loop; nothing to do here at idle)
   } else {
     // no cover: bigger title + artist text
     gfx->setTextSize(2);
     gfx->setTextColor(COL_FG);
     gfx->setCursor(15, 78);
-    gfx->println(p.current_title.substring(0, 16));
+    gfx->println(utf8ToAscii(p.current_title.substring(0, 16)));
     gfx->setTextSize(2);
     gfx->setTextColor(COL_DIM);
     gfx->setCursor(15, 110);
-    gfx->println(p.current_artist.substring(0, 16));
+    gfx->println(utf8ToAscii(p.current_artist.substring(0, 16)));
   }
 
 }
@@ -890,7 +925,7 @@ void drawPlayerList() {
       gfx->setTextColor(COL_DIM);
     }
     gfx->setCursor(26, y);
-    gfx->println(ma.players[i].name.substring(0, 15));
+    gfx->println(utf8ToAscii(ma.players[i].name.substring(0, 15)));
   }
 }
 
