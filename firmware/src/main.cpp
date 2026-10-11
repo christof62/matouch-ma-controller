@@ -259,29 +259,6 @@ void setup() {
       }
     }
   });
-  ma.setFirstMessageCallback([](const char *msg) {
-    Serial.printf("[UI] first server msg: %s\n", msg);
-    // quick visual feedback on the display
-    gfx->fillScreen(BLACK);
-    gfx->setTextColor(COL_ACCENT);
-    gfx->setTextSize(1);
-    gfx->setCursor(15, 60);
-    gfx->println("Server said:");
-    gfx->setTextColor(COL_FG);
-    gfx->setCursor(15, 80);
-    // print up to 5 lines of 25 chars
-    int len = strlen(msg);
-    for (int i = 0; i < 5 && i * 25 < len; i++) {
-      char line[26];
-      int n = min(25, len - i * 25);
-      memcpy(line, msg + i * 25, n);
-      line[n] = '\0';
-      gfx->setCursor(15, 80 + i * 14);
-      gfx->println(line);
-    }
-    delay(6000);  // show it for 6 seconds
-    markDirty();
-  });
 }
 
 // ------------------------------------------------------------------
@@ -509,7 +486,11 @@ static int jpegDrawCallback(JPEGDRAW *pDraw) {
 void fetchArtwork() {
   if (ma.players.empty()) return;
   MaPlayer &p = ma.players[ma.activePlayerIndex];
-  if (p.artwork_url.length() == 0) return;
+  if (p.artwork_url.length() == 0) {
+    Serial.printf("[ART] no artwork_url for %s (title: %s)\n",
+                  p.name.c_str(), p.current_title.c_str());
+    return;
+  }
   // already loaded for this player+url?
   String key = p.player_id + "|" + p.artwork_url;
   if (artworkLoadedFor == key) return;
