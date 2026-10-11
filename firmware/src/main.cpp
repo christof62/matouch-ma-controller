@@ -555,11 +555,13 @@ bool decodeArtworkToBuffer() {
     return false;
   }
   jpeg.setPixelType(RGB565_LITTLE_ENDIAN);
-  // scale: power of two. Pick the SMALLEST scale that still fits into
-  // ART_SIZE, so the circle is fully covered by the image.
+  // scale: power of two. Pick the LARGEST scale that still yields at least
+  // ART_SIZE in both dimensions -> the crop path fills the whole circle.
+  // (e.g. 200x194 -> scale 0 = 200x194 -> center-crop 160x160)
+  // Only if the source is smaller than the buffer does the centered path run.
   int scale = 0;
-  while ((jpeg.getWidth() >> scale) > ART_SIZE ||
-         (jpeg.getHeight() >> scale) > ART_SIZE) scale++;
+  while ((jpeg.getWidth() >> (scale + 1)) >= ART_SIZE &&
+         (jpeg.getHeight() >> (scale + 1)) >= ART_SIZE) scale++;
   int w = jpeg.getWidth() >> scale;
   int h = jpeg.getHeight() >> scale;
   memset(artDecodeBuf, 0, sizeof(artDecodeBuf));
