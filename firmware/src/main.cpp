@@ -76,7 +76,7 @@ void restoreSelectedPlayer();
 // marquee: title/artist ticker in large text across the lower display area
 #define MARQUEE_INTERVAL_MS 30000UL  // start a run every 30s
 #define MARQUEE_SPEED_MS 80UL        // pixel step time
-#define MARQUEE_BAND_Y 196           // band top
+#define MARQUEE_BAND_Y 104           // band top: centered over the cover
 #define MARQUEE_BAND_H 32            // band height (2x16px font = 32)
 #define MARQUEE_TEXT_SIZE 2         // large font
 #define MARQUEE_MAX_LEN 64
@@ -98,19 +98,50 @@ void markDirty() { uiDirty = true; }
 void drawMarqueeFrame() {
   int bandW = 216;                       // usable width inside the ring
   int x0 = (SCREEN_W - bandW) / 2;
-  // clear the band
-  gfx->fillRect(x0, MARQUEE_BAND_Y, bandW, MARQUEE_BAND_H, BLACK);
-  if (marqueeOffset < 0) return;         // idle: band cleared
+
+  // 1) restore the cover pixels of the band area (re-blit band rows),
+  //    or clear to black when there is no artwork
+  if (artworkBufValid) {
+    int ax0 = (SCREEN_W - ART_SIZE) / 2;
+    int ay0 = (SCREEN_H - ART_SIZE) / 2;
+    int cx = ART_SIZE / 2, cy = ART_SIZE / 2;
+    int r2 = cx * cx;
+    static uint16_t rowBuf[ART_SIZE];
+    for (int y = MARQUEE_BAND_Y; y < MARQUEE_BAND_Y + MARQUEE_BAND_H; y++) {
+      int ly = y - ay0;                  // line in artwork coords
+      if (ly < 0 || ly >= ART_SIZE) continue;
+      int dy = ly - cy;
+      int dyr = r2 - dy * dy;
+      if (dyr < 0) continue;              // outside circle: leave as is
+      int halfW = 0;
+      while ((halfW + 1) * (halfW + 1) <= dyr) halfW++;
+      if (halfW * 2 + 1 > bandW) halfW = bandW / 2;
+      int sxStart = cx - halfW;
+      int span = 2 * halfW + 1;
+      for (int i = 0; i < span; i++) {
+        int sx = sxStart + i;
+        int sxx = artImgX0 + (sx * artImgW) / ART_SIZE;
+        int syy = artImgY0 + (ly * artImgH) / ART_SIZE;
+        rowBuf[i] = artworkBuf[syy * ART_SIZE + sxx];
+      }
+      gfx->draw16bitRGBBitmap(ax0 + sxStart, y, rowBuf, span, 1);
+    }
+  } else {
+    gfx->fillRect(x0, MARQUEE_BAND_Y, bandW, MARQUEE_BAND_H, BLACK);
+  }
+
+  if (marqueeOffset < 0) return;         // idle: cover restored, no text
   int textW = marqueeText.length() * 12; // size-2 font: ~12px per char
   gfx->setTextSize(MARQUEE_TEXT_SIZE);
   gfx->setTextColor(COL_FG);
-  // draw with manual clipping inside the band
+  // draw a subtle dark backing strip for readability, then the text
+  int visX0 = x0;                        // text drawn clipped to the band
   int x = x0 - marqueeOffset;
   for (int i = 0; i < marqueeText.length(); i++) {
-    int cx = x + i * 12;
-    if (cx + 12 <= x0 || cx >= x0 + bandW) continue;
+    int cxPos = x + i * 12;
+    if (cxPos + 12 <= visX0 || cxPos >= visX0 + bandW) continue;
     char c[2] = { marqueeText[i], '\0' };
-    gfx->setCursor(cx, MARQUEE_BAND_Y + 8);
+    gfx->setCursor(cxPos, MARQUEE_BAND_Y + 8);
     gfx->print(c);
   }
 }
