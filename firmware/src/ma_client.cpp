@@ -308,6 +308,14 @@ void MusicAssistantClient::parsePlayersJson(const char *json, size_t len) {
       mp.current_title = cm["title"] | "";
       mp.current_artist = cm["artist"] | "";
       mp.current_album = cm["album"] | "";
+      // DEBUG: dump the raw current_media of the first player that has one
+      static bool cmDumped = false;
+      if (!cmDumped) {
+        cmDumped = true;
+        String out;
+        serializeJson(cm, out);
+        Serial.printf("[DBG] current_media: %s\n", out.c_str());
+      }
       // image can be an object or array of objects with a "url"/"path"
       JsonVariantConst img = cm["image"];
       if (img.is<JsonArrayConst>()) {
