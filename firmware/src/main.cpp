@@ -530,7 +530,8 @@ bool drawArtwork() {
   // center the image in the middle of the round display
   int x = (SCREEN_W - w) / 2;
   int y = (SCREEN_H - h) / 2;
-  Serial.printf("[ART] drawing %dx%d at (%d,%d) scale 1/%d\n", w, h, x, y, 1 << scale);
+  Serial.printf("[ART] src %dx%d -> drawing %dx%d at (%d,%d) scale 1/%d\n",
+                jpeg.getWidth(), jpeg.getHeight(), w, h, x, y, 1 << scale);
   if (jpeg.decode(x, y, scale) != 1) {
     Serial.println("[ART] decode failed");
     return false;
@@ -622,6 +623,8 @@ void drawPlayerScreen() {
   uint16_t stateCol = COL_STOP;
   if (p.state == "playing") stateCol = COL_PLAY;
   else if (p.state == "paused") stateCol = COL_PAUSE;
+  Serial.printf("[UI] player screen: state='%s' vol=%d ring=0x%04x\n",
+                p.state.c_str(), p.volume_level, stateCol);
 
   // outer ring in STATE COLOR, filled proportionally to the volume -
   // shows both status (color) and volume (fill) permanently
