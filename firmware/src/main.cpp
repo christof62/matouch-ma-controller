@@ -503,6 +503,7 @@ void fetchArtwork() {
         artworkJpegLen = read;
         artworkLoadedFor = key;
         Serial.printf("[ART] loaded %d bytes for %s\n", (int)read, p.name.c_str());
+        markDirty();  // redraw the player screen with the new artwork
       }
     }
   } else {
@@ -518,10 +519,10 @@ bool drawArtwork() {
     return false;
   }
   jpeg.setPixelType(RGB565_LITTLE_ENDIAN);  // matches draw16bitRGBBitmap
-  // JPEGDEC scale is power-of-two only: pick the largest size that fits 110px
+  // JPEGDEC scale is power-of-two only: pick the largest size that fits 150px
   int scale = 0;
-  while ((jpeg.getWidth() >> (scale + 1)) >= 110 &&
-         (jpeg.getHeight() >> (scale + 1)) >= 110) scale++;
+  while ((jpeg.getWidth() >> (scale + 1)) >= 150 &&
+         (jpeg.getHeight() >> (scale + 1)) >= 150) scale++;
   int w = jpeg.getWidth() >> scale;
   int h = jpeg.getHeight() >> scale;
 
@@ -622,22 +623,14 @@ void drawPlayerScreen() {
   else if (p.state == "paused") stateCol = COL_PAUSE;
 
   int vol = p.volume_level;
-  drawVolumeArc(120, 120, 112, vol, 8, COL_ACCENT2, COL_RING_OFF);
-  drawThickArc(120, 120, 100, 0, TWO_PI_F, 2, stateCol);
+  drawVolumeArc(120, 120, 117, vol, 6, COL_ACCENT2, COL_RING_OFF);
+  drawThickArc(120, 120, 108, 0, TWO_PI_F, 2, stateCol);
 
   // album art in the center when available
   bool hasArt = drawArtwork();
 
-  gfx->setTextColor(COL_FG);
-  gfx->setTextSize(1);
-  gfx->setCursor(30, 40);
-  gfx->println(p.name.substring(0, 24));
-
   if (hasArt) {
     // text below the artwork
-    gfx->setTextSize(1);
-    gfx->setCursor(15, 40);
-    gfx->println(p.name.substring(0, 24));
     gfx->setTextSize(1);
     gfx->setCursor(15, 178);
     gfx->println(p.current_title.substring(0, 30));
@@ -663,8 +656,8 @@ void drawVolumeScreen() {
 }
 
 void drawVolumeOverlay() {
-  // arc ring on top of the player view
-  drawVolumeArc(120, 120, 112, volumeTarget, 10, COL_ACCENT, COL_RING_OFF);
+  // arc ring on the very outer edge, on top of the player view
+  drawVolumeArc(120, 120, 117, volumeTarget, 8, COL_ACCENT, COL_RING_OFF);
 
   // semi-cover the center for the number
   gfx->fillCircle(120, 120, 55, BLACK);
