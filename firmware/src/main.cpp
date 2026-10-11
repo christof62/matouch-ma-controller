@@ -95,6 +95,8 @@ String marqueeText = "";
 static uint16_t *artDecodeBuf = nullptr;  // PSRAM, allocated in setup()
 static int artImgX0 = 0, artImgY0 = 0, artImgW = 0, artImgH = 0;
 
+volatile bool artworkFetchPending = false;
+
 JPEGDEC jpeg;
 uint8_t *artworkJpeg = nullptr;
 size_t artworkJpegLen = 0;
@@ -297,10 +299,12 @@ void setup() {
 
   drawMessage("Connecting MA...");
 
+  // NOTE: the MA event callback runs inside the websocket receive context.
+  // Never do blocking work (HTTP!) there - only set flags; the loop()
+  // performs the fetch + redraw.
   ma.begin(ma_host, ma_port, ma_token, []() {
     markDirty();
-    // a player update may bring a new track -> fetch its artwork right away
-    fetchArtwork();
+    artworkFetchPending = true;
   });
   ma.setPlayersLoadedCallback([]() {
     restoreSelectedPlayer();
@@ -332,10 +336,11 @@ void loop() {
     markDirty();  // triggers a FULL player redraw -> overlay is gone completely
   }
 
-  // fetch artwork for the active player when needed (every 10s max)
+  // fetch artwork: immediately when an event flagged it, else every 10s
   static uint32_t lastArtTry = 0;
-  if (millis() - lastArtTry > 10000) {
+  if (artworkFetchPending || millis() - lastArtTry > 10000) {
     lastArtTry = millis();
+    artworkFetchPending = false;
     fetchArtwork();
   }
 
@@ -590,8 +595,10 @@ void fetchArtwork() {
         artworkJpegLen = read;
         artworkLoadedFor = key;
         Serial.printf("[ART] loaded %d bytes for %s\n", (int)read, p.name.c_str());
-        decodeArtworkToBuffer();  // decode ONCE here, not on every redraw
-        markDirty();  // redraw the player screen with the new artwork
+        if (decodeArtworkToBuffer()) {
+          // redraw only the player screen with the new cover
+          if (screen == SCR_PLAYER) drawPlayerScreen();
+        }
       }
     }
   } else {
@@ -792,13 +799,15 @@ void drawPlayerScreen() {
                   p.current_artist.substring(0, 28);
     // (the marquee draws itself in the loop; nothing to do here at idle)
   } else {
+    // no cover: bigger title + artist text
     gfx->setTextSize(2);
-    gfx->setCursor(15, 88);
+    gfx->setTextColor(COL_FG);
+    gfx->setCursor(15, 78);
     gfx->println(p.current_title.substring(0, 16));
-    gfx->setTextSize(1);
+    gfx->setTextSize(2);
     gfx->setTextColor(COL_DIM);
-    gfx->setCursor(15, 112);
-    gfx->println(p.current_artist.substring(0, 30));
+    gfx->setCursor(15, 110);
+    gfx->println(p.current_artist.substring(0, 16));
   }
 
 }
