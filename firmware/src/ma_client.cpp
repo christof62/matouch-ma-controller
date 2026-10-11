@@ -265,12 +265,14 @@ void MusicAssistantClient::parsePlayersJson(const char *json, size_t len) {
   f0["available"] = true;
   f0["powered"] = true;
   f0["state"] = true;
+  f0["playback_state"] = true;
   f0["volume_level"] = true;
   f0["volume_muted"] = true;
   JsonObject fcm = f0["current_media"].to<JsonObject>();
   fcm["title"] = true;
   fcm["artist"] = true;
   fcm["album"] = true;
+  fcm["image_url"] = true;
 
   JsonDocument doc;
   DeserializationError err = deserializeJson(doc, json, len, DeserializationOption::Filter(filter));
