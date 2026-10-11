@@ -332,6 +332,11 @@ void setup() {
     ESP.restart();
   }
 
+  // stability: keep the radio always on. The default MIN_MODEM powersave
+  // sleeps the WiFi radio between beacons -> micro-drops under load
+  // (WS + HTTP artwork + SPI display running at once).
+  WiFi.setSleep(false);
+
   drawMessage("Connecting MA...");
 
   // NOTE: the MA event callback runs inside the websocket receive context.
