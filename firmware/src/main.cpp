@@ -297,7 +297,11 @@ void setup() {
 
   drawMessage("Connecting MA...");
 
-  ma.begin(ma_host, ma_port, ma_token, []() { markDirty(); });
+  ma.begin(ma_host, ma_port, ma_token, []() {
+    markDirty();
+    // a player update may bring a new track -> fetch its artwork right away
+    fetchArtwork();
+  });
   ma.setPlayersLoadedCallback([]() {
     restoreSelectedPlayer();
     // adopt the active player's current volume so turning starts from there
@@ -545,6 +549,18 @@ void fetchArtwork() {
   if (p.artwork_url.length() == 0) {
     Serial.printf("[ART] no artwork_url for %s (title: %s)\n",
                   p.name.c_str(), p.current_title.c_str());
+    // a track without artwork must clear the PREVIOUS cover:
+    // drop the buffer so the player screen falls back to text mode
+    String key = p.player_id + "|";
+    if (artworkLoadedFor != key) {
+      artworkLoadedFor = key;
+      artworkBufValid = false;
+      if (marqueeOffset >= 0) {  // stop a running marquee
+        marqueeOffset = -1;
+        marqueeNextStart = millis() + MARQUEE_INTERVAL_MS;
+      }
+      markDirty();  // redraw without artwork
+    }
     return;
   }
   // already loaded for this player+url?
