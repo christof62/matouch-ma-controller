@@ -334,13 +334,13 @@ void loop() {
       int textW = marqueeText.length() * 12;
       int bandW = 216;
       if (marqueeOffset > textW + bandW) {
-        // run finished: clear the band, then full redraw restores the cover
+        // run finished: erase the band fully (BLACK), then the player
+        // redraw re-blits the cover -> nothing of the band remains
         marqueeOffset = -1;
         marqueeNextStart = millis() + MARQUEE_INTERVAL_MS;
-        // drawMarqueeFrame with offset<0 clears the band to background,
-        // then the player redraw re-blits the cover over that area
-        drawMarqueeFrame();
-        markDirty();
+        int x0e = (SCREEN_W - 216) / 2;
+        gfx->fillRect(x0e, MARQUEE_BAND_Y, 216, MARQUEE_BAND_H, BLACK);
+        markDirty();  // full player redraw incl. cover
       } else {
         drawMarqueeFrame();
       }
@@ -377,26 +377,18 @@ void applyVolume() {
 
 void handleInput() {
   // ---- encoder rotation ----
+  // FullQuad counts BOTH edges per detent -> one detent = 2 counts.
+  // Divide by 2 so one detent is exactly one step.
   static int64_t lastCount = 0;
-  static int8_t lastDir = 0;        // direction of the previous accepted step
-  static uint32_t lastStepAt = 0;   // when it happened
   int64_t now = encoder.getCount();
-  int delta = (int)(now - lastCount);
-  // clamp spikes from contact noise: ignore impossible jumps
-  if (delta > 4 || delta < -4) {
-    delta = (delta > 0) ? 2 : -2;  // treat as a single detent step
-  }
+  int64_t raw = (now - lastCount);
+  int delta = (int)(raw / 2);
+  // if one raw count remains (odd), remember it via rounding down only
+  // when even -> keep lastCount at the last fully consumed detent
   if (delta != 0) {
+    lastCount += (int64_t)delta * 2;
     int8_t dir = (delta > 0) ? 1 : -1;
-    uint32_t nowMs = millis();
-    // debounce bounce: a direction change or double step within 40ms is
-    // contact bounce -> ignore; a real detent never comes that fast
-    if (dir == lastDir && (nowMs - lastStepAt) < 40) {
-      lastCount = now;  // consume the bounce, do not move
-      return;
-    }
-    lastDir = dir;
-    lastStepAt = nowMs;
+    (void)dir;
     lastCount = now;
     switch (screen) {
       case SCR_PLAYER:
