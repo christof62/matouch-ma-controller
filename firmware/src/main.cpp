@@ -770,8 +770,7 @@ void drawPlayerScreen() {
     // title/artist shown as scrolling marquee in the lower band (large text)
     marqueeText = p.current_title.substring(0, 28) + "  -  " +
                   p.current_artist.substring(0, 28);
-    // draw the static band content for this frame
-    if (marqueeOffset < 0) drawMarqueeFrame();
+    // (the marquee draws itself in the loop; nothing to do here at idle)
   } else {
     gfx->setTextSize(2);
     gfx->setCursor(15, 88);
