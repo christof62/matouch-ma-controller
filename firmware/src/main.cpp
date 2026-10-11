@@ -553,10 +553,11 @@ bool decodeArtworkToBuffer() {
     return false;
   }
   jpeg.setPixelType(RGB565_LITTLE_ENDIAN);
-  // scale: power of two, target <= ART_SIZE
+  // scale: power of two. Pick the SMALLEST scale that still fits into
+  // ART_SIZE, so the circle is fully covered by the image.
   int scale = 0;
-  while ((jpeg.getWidth() >> (scale + 1)) >= ART_SIZE &&
-         (jpeg.getHeight() >> (scale + 1)) >= ART_SIZE) scale++;
+  while ((jpeg.getWidth() >> scale) > ART_SIZE ||
+         (jpeg.getHeight() >> scale) > ART_SIZE) scale++;
   int w = jpeg.getWidth() >> scale;
   int h = jpeg.getHeight() >> scale;
   int x0 = (ART_SIZE - w) / 2;
