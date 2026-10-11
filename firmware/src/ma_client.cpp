@@ -501,13 +501,14 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
         _authed = true;
         _state = MaConnState::Authenticated;
         Serial.println("[MA] authenticated OK");
-        if (players.empty()) {
-          // initial connect: we need the player list (blocking download)
-          _pendingPlayersFetch = true;
-        } else {
-          // reconnect: keep the existing list; live events refresh it and
-          // the periodic poll fills gaps - avoids multi-second blocking
-          Serial.println("[MA] reconnect: keeping cached players");
+        // IMPORTANT: also on reconnects we must re-fetch the player list.
+        // Events missed during the disconnect (e.g. a track change) are
+        // otherwise not seen - the cached data grows stale and e.g. an old
+        // cover keeps matching the stale track uri. One fetch per reconnect
+        // is cheap now (small artwork downloads, deferred via loop flag).
+        _pendingPlayersFetch = true;
+        if (!players.empty()) {
+          Serial.println("[MA] reconnect: re-syncing players (missed events)");
         }
         if (_onEvent) _onEvent();
         return;
