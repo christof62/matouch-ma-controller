@@ -88,9 +88,17 @@ void MusicAssistantClient::loop() {
   if (millis() - lastBeat > 10000) {
     lastBeat = millis();
     static const char *names[] = {"disconnected", "connecting", "connected", "authenticated", "error"};
-    Serial.printf("[MA] heartbeat: %s, players=%d, wifi=%s\n",
+    static uint32_t reconnects = 0;
+    static MaConnState lastState = MaConnState::Authenticated;
+    if (_state == MaConnState::Connected && lastState != MaConnState::Connected &&
+        lastState != MaConnState::Connecting && lastState != MaConnState::Authenticated) {
+      reconnects++;  // a fresh connect after a drop
+    }
+    lastState = _state;
+    Serial.printf("[MA] heartbeat: %s, players=%d, wifi=%s, rssi=%d, rc=%lu\n",
                   names[(int)_state], (int)players.size(),
-                  WiFi.isConnected() ? "ok" : "DOWN");
+                  WiFi.isConnected() ? "ok" : "DOWN",
+                  WiFi.RSSI(), (unsigned long)reconnects);
   }
 
   // TCP reachability test: if we are stuck in Connecting, try a raw TCP
