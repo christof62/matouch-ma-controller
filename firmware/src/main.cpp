@@ -76,6 +76,7 @@ void restoreSelectedPlayer();
 // (ring inner edge ~r108 -> mask radius 108 -> diameter 216)
 #define ART_SIZE 216
 static uint16_t *artDecodeBuf = nullptr;  // PSRAM, allocated in setup()
+static int artImgX0 = 0, artImgY0 = 0, artImgW = 0, artImgH = 0;
 
 void markDirty() { uiDirty = true; }
 void drawVolumeOverlay();
@@ -543,11 +544,15 @@ bool drawArtwork() {
   int y0 = (SCREEN_H - ART_SIZE) / 2;
   int cx = ART_SIZE / 2, cy = ART_SIZE / 2;
   int r2 = cx * cx;  // circle radius = half size
+  // stretch the decoded image region (artImgX0..+W) to the full mask so
+  // smaller-than-mask covers leave no bars (nearest-neighbor sampling)
   for (int y = 0; y < ART_SIZE; y++) {
     for (int x = 0; x < ART_SIZE; x++) {
       int dx = x - cx, dy = y - cy;
       if (dx * dx + dy * dy <= r2) {
-        gfx->drawPixel(x0 + x, y0 + y, artworkBuf[y * ART_SIZE + x]);
+        int sx = artImgX0 + (x * artImgW) / ART_SIZE;
+        int sy = artImgY0 + (y * artImgH) / ART_SIZE;
+        gfx->drawPixel(x0 + x, y0 + y, artworkBuf[sy * ART_SIZE + sx]);
       }
     }
   }
@@ -572,6 +577,7 @@ bool decodeArtworkToBuffer() {
   int h = jpeg.getHeight() >> scale;
   memset(artDecodeBuf, 0, (size_t)ART_SIZE * ART_SIZE * sizeof(uint16_t));
   if (w > ART_SIZE || h > ART_SIZE) {
+    // crop path fills the whole buffer
     // scaled image larger than the buffer: crop the CENTER region.
     // JPEGDEC's setCropArea works along MCU boundaries and passes the
     // cropped pixels to the callback - position (0,0) in the callback
@@ -586,6 +592,7 @@ bool decodeArtworkToBuffer() {
       Serial.println("[ART] decode failed");
       return false;
     }
+    artImgX0 = 0; artImgY0 = 0; artImgW = ART_SIZE; artImgH = ART_SIZE;
   } else {
     // image fits: center it in the buffer
     int x0 = (ART_SIZE - w) / 2;
@@ -596,6 +603,7 @@ bool decodeArtworkToBuffer() {
       Serial.println("[ART] decode failed");
       return false;
     }
+    artImgX0 = x0; artImgY0 = y0; artImgW = w; artImgH = h;
   }
   // (re)allocate the persistent buffer in PSRAM
   size_t bufBytes = (size_t)ART_SIZE * ART_SIZE * sizeof(uint16_t);
