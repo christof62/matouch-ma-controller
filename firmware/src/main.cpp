@@ -76,10 +76,10 @@ extern bool artworkBufValid;
 extern uint16_t *artworkBuf;
 #define MARQUEE_INTERVAL_MS 30000UL  // start a run every 30s
 #define MARQUEE_SPEED_MS 80UL        // pixel step time
-#define MARQUEE_BAND_Y 108           // band top: centered ON the cover
-#define MARQUEE_BAND_H 17            // 1px more than the 16px size-2 font
+#define MARQUEE_BAND_Y 108           // band top: centered ON the cover (25px band)
+#define MARQUEE_BAND_H 25            // 1px more than the 24px size-3 font
 #define COL_MARQUEE_BG RGB565(0x30, 0x30, 0x30)  // dark grey backing band
-#define MARQUEE_TEXT_SIZE 2         // large font
+#define MARQUEE_TEXT_SIZE 3         // extra large font (24px)
 #define MARQUEE_MAX_LEN 64
 
 uint32_t marqueeNextStart = 0;   // when the next run begins
@@ -121,8 +121,8 @@ void drawMarqueeFrame() {
   gfx->setTextColor(COL_FG);
   int x = x0 - marqueeOffset;
   for (int i = 0; i < marqueeText.length(); i++) {
-    int cxPos = x + i * 12;
-    if (cxPos + 12 <= x0 || cxPos >= x0 + bandW) continue;
+    int cxPos = x + i * 18;
+    if (cxPos + 18 <= x0 || cxPos >= x0 + bandW) continue;
     char c[2] = { marqueeText[i], '\0' };
     gfx->setCursor(cxPos, MARQUEE_BAND_Y);
     gfx->print(c);
@@ -331,7 +331,7 @@ void loop() {
     } else if (millis() - marqueeLastStep >= MARQUEE_SPEED_MS) {
       marqueeLastStep = millis();
       marqueeOffset += 4;  // 4px per step
-      int textW = marqueeText.length() * 12;
+      int textW = marqueeText.length() * 18;
       int bandW = 216;
       if (marqueeOffset > textW + bandW) {
         // run finished: erase the band fully (BLACK), then the player
