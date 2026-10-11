@@ -558,9 +558,8 @@ void handleInput() {
 // decode into an offscreen PSRAM buffer, then apply a circular clip
 
 static int jpegDrawCallback(JPEGDRAW *pDraw) {
-  // pDraw->x/y are buffer coordinates (JPEGDEC adds the decode origin).
-  // MCUs that start outside the buffer partially overlap: pDraw->x can be
-  // negative (left/top crop) - handle per-pixel clipping correctly.
+  // per-pixel clip into the buffer; oversized images decoded at a negative
+  // origin keep only their CENTER (the visible circle area)
   for (int y = 0; y < pDraw->iHeight; y++) {
     int dy = pDraw->y + y;
     if (dy < 0 || dy >= ART_SIZE) continue;
@@ -641,23 +640,33 @@ bool drawArtwork() {
   int x0 = (SCREEN_W - ART_SIZE) / 2;
   int y0 = (SCREEN_H - ART_SIZE) / 2;
   int cx = ART_SIZE / 2, cy = ART_SIZE / 2;
-  int r2 = cx * cx;  // circle radius = half size
-  // fast row-based blit: sample the row, then draw the visible span
-  // with a single call per row (much faster than per-pixel drawPixel)
+  int r2 = cx * cx;
+
+  // visible source region inside the buffer: the image may be smaller
+  // (letterbox) or LARGER (negative origin -> center-crop already applied
+  // by the decode clip). Compute the intersection with the buffer.
+  int vx0 = artImgX0 < 0 ? 0 : artImgX0;
+  int vy0 = artImgY0 < 0 ? 0 : artImgY0;
+  int vx1 = artImgX0 + artImgW > ART_SIZE ? ART_SIZE : artImgX0 + artImgW;
+  int vy1 = artImgY0 + artImgH > ART_SIZE ? ART_SIZE : artImgY0 + artImgH;
+  int vw = vx1 - vx0;
+  int vh = vy1 - vy0;
+  if (vw <= 0 || vh <= 0) return false;
+
+  // fast row-based blit: stretch the visible region over the circle mask
   static uint16_t rowBuf[ART_SIZE];
   for (int y = 0; y < ART_SIZE; y++) {
     int dy = y - cy;
-    int dyr = r2 - dy * dy;          // remaining x² budget for this row
-    if (dyr < 0) continue;           // row outside the circle
+    int dyr = r2 - dy * dy;
+    if (dyr < 0) continue;
     int halfW = 0;
     while ((halfW + 1) * (halfW + 1) <= dyr) halfW++;
     int xStart = cx - halfW;
     int span = 2 * halfW + 1;
-    // sample the stretched row segment
     for (int i = 0; i < span; i++) {
       int x = xStart + i;
-      int sx = artImgX0 + (x * artImgW) / ART_SIZE;
-      int sy = artImgY0 + (y * artImgH) / ART_SIZE;
+      int sx = vx0 + ((x * vw) / ART_SIZE);
+      int sy = vy0 + ((y * vh) / ART_SIZE);
       rowBuf[i] = artworkBuf[sy * ART_SIZE + sx];
     }
     gfx->draw16bitRGBBitmap(x0 + xStart, y0 + y, rowBuf, span, 1);
@@ -682,35 +691,19 @@ bool decodeArtworkToBuffer() {
   int w = jpeg.getWidth() >> scale;
   int h = jpeg.getHeight() >> scale;
   memset(artDecodeBuf, 0, (size_t)ART_SIZE * ART_SIZE * sizeof(uint16_t));
-  if (w > ART_SIZE || h > ART_SIZE) {
-    // crop path fills the whole buffer
-    // scaled image larger than the buffer: crop the CENTER region.
-    // JPEGDEC's setCropArea works along MCU boundaries and passes the
-    // cropped pixels to the callback - position (0,0) in the callback
-    // maps to the crop area's top-left corner.
-    int cx = (w - ART_SIZE) / 2;
-    int cy = (h - ART_SIZE) / 2;
-    Serial.printf("[ART] src %dx%d crop (%d,%d) %dx%d scale 1/%d\n",
-                  jpeg.getWidth(), jpeg.getHeight(), cx, cy, ART_SIZE, ART_SIZE,
-                  1 << scale);
-    jpeg.setCropArea(cx, cy, ART_SIZE, ART_SIZE);
-    if (jpeg.decode(0, 0, scale) != 1) {
-      Serial.println("[ART] decode failed");
-      return false;
-    }
-    artImgX0 = 0; artImgY0 = 0; artImgW = ART_SIZE; artImgH = ART_SIZE;
-  } else {
-    // image fits: center it in the buffer
-    int x0 = (ART_SIZE - w) / 2;
-    int y0 = (ART_SIZE - h) / 2;
-    Serial.printf("[ART] src %dx%d centered at (%d,%d) scale 1/%d\n",
-                  jpeg.getWidth(), jpeg.getHeight(), x0, y0, 1 << scale);
-    if (jpeg.decode(x0, y0, scale) != 1) {
-      Serial.println("[ART] decode failed");
-      return false;
-    }
-    artImgX0 = x0; artImgY0 = y0; artImgW = w; artImgH = h;
+  // NOTE: setCropArea is NOT used - its coordinates refer to the SOURCE
+  // image, which is error-prone with scaling. Instead we always decode
+  // centered into the buffer and let the blit handle the geometry.
+  // MCUs outside the buffer are clipped by the callback (x/y bounds).
+  int x0 = (ART_SIZE - w) / 2;
+  int y0 = (ART_SIZE - h) / 2;
+  Serial.printf("[ART] src %dx%d -> decode %dx%d at (%d,%d) scale 1/%d\n",
+                jpeg.getWidth(), jpeg.getHeight(), w, h, x0, y0, 1 << scale);
+  if (jpeg.decode(x0, y0, scale) != 1) {
+    Serial.println("[ART] decode failed");
+    return false;
   }
+  artImgX0 = x0; artImgY0 = y0; artImgW = w; artImgH = h;
   // (re)allocate the persistent buffer in PSRAM
   size_t bufBytes = (size_t)ART_SIZE * ART_SIZE * sizeof(uint16_t);
   if (!artworkBuf) {
