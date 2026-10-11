@@ -115,10 +115,13 @@ bool decodeArtworkToBuffer();
 // each row clears/draws only the width the circle allows at that height,
 // so no ring pixels are touched and no leftovers remain at the sides.
 void drawMarqueeFrame() {
+  if (marqueeOffset < 0) return;  // idle: nothing to draw at all
   const int ccx = 120, ccy = 120, cr = 108;  // cover circle geometry
   gfx->setTextSize(MARQUEE_TEXT_SIZE);
-  gfx->setTextColor(COL_FG);
-  int x = -marqueeOffset;  // text x in screen coords (band starts at left edge)
+  // opaque text: each glyph draws its own background -> no flicker,
+  // the previous frame's pixels are overpainted by the glyphs themselves
+  gfx->setTextColor(COL_FG, COL_MARQUEE_BG);
+  int x = -marqueeOffset;  // text x in screen coords
 
   for (int row = 0; row < MARQUEE_BAND_H; row++) {
     int y = MARQUEE_BAND_Y + row;
@@ -128,15 +131,17 @@ void drawMarqueeFrame() {
     int halfW = (int)sqrtf((float)dyr);
     int rowX0 = ccx - halfW;
     int rowW = 2 * halfW;
-    // clear this row's band area to the backing color
-    gfx->fillRect(rowX0, y, rowW, 1, marqueeOffset < 0 ? BLACK : COL_MARQUEE_BG);
-    if (marqueeOffset < 0) continue;     // idle: row cleared, no text
+    // rows above/below the 24px text area: just the grey band background
+    if (row == 0 || row >= 25 - 1) {
+      gfx->fillRect(rowX0, y, rowW, 1, COL_MARQUEE_BG);
+      continue;
+    }
     // draw the visible text characters of this row (clip per char)
     for (int i = 0; i < marqueeText.length(); i++) {
       int cxPos = x + i * 18;
       if (cxPos + 18 <= rowX0 || cxPos >= rowX0 + rowW) continue;
       char c[2] = { marqueeText[i], '\0' };
-      gfx->setCursor(cxPos, MARQUEE_BAND_Y);
+      gfx->setCursor(cxPos, MARQUEE_BAND_Y + 1);
       gfx->print(c);
     }
   }
@@ -339,6 +344,16 @@ void loop() {
       if (marqueeText.length() && millis() >= marqueeNextStart) {
         marqueeOffset = 0;
         marqueeLastStep = millis();
+        // fill the band area once with the grey backing color (circle-clipped)
+        const int ccx = 120, ccy = 120, cr = 108;
+        for (int row = 0; row < MARQUEE_BAND_H; row++) {
+          int y = MARQUEE_BAND_Y + row;
+          int dy = y - ccy;
+          int dyr = cr * cr - dy * dy;
+          if (dyr <= 0) continue;
+          int halfW = (int)sqrtf((float)dyr);
+          gfx->fillRect(ccx - halfW, y, 2 * halfW, 1, COL_MARQUEE_BG);
+        }
         drawMarqueeFrame();
       }
     } else if (millis() - marqueeLastStep >= MARQUEE_SPEED_MS) {
