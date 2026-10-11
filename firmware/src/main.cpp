@@ -255,6 +255,10 @@ void setup() {
     delay(3000);
   }
 
+  // fixed hostname: shows up in the router device list; assign a static
+  // DHCP lease to it there so the device keeps a stable address
+  WiFi.setHostname("matouch-ma");
+
   WiFiManager wm;
   WiFiManagerParameter p_host("ma_host", "MA Server (IP/Hostname)", ma_host, 64);
   WiFiManagerParameter p_port("ma_port", "MA Port (default 8095)", ma_port_str, 8);
