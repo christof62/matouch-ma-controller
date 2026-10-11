@@ -67,6 +67,7 @@ void drawMarqueeFrame();
 void drawPlayerList();
 void drawMessage(const char *msg);
 void handleInput();
+void flushVolume();
 void saveConfig();
 void loadConfig();
 void saveSelectedPlayer();
