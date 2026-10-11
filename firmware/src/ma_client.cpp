@@ -524,6 +524,14 @@ void MusicAssistantClient::handleIncoming(uint8_t *payload, size_t length) {
 
   if (strcmp(event, "player_updated") == 0) {
     JsonObjectConst data = obj["data"];
+    // DEBUG: dump current_media of the first few player_updated events
+    static int cmDump = 0;
+    if (cmDump < 3 && !data.isNull() && !data["current_media"].isNull()) {
+      cmDump++;
+      String out;
+      serializeJson(data["current_media"], out);
+      Serial.printf("[DBG] current_media: %s\n", out.c_str());
+    }
     if (!data.isNull()) parsePlayer(data, false);
     if (_onEvent) _onEvent();
   } else if (strcmp(event, "player_added") == 0 || strcmp(event, "player_removed") == 0) {
