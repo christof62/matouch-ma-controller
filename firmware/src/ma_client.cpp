@@ -295,6 +295,17 @@ void MusicAssistantClient::parsePlayersJson(const char *json, size_t len) {
   }
 
   players.clear();
+  static bool rawDumped = false;
+  if (!rawDumped && arr.size() > 0) {
+    rawDumped = true;
+    // dump the raw json around "image_url" for the first player having it
+    const char *pos = strstr(json, "image_url");
+    if (pos) {
+      Serial.printf("[DBG] raw image_url ctx: %.160s\n", pos);
+    } else {
+      Serial.println("[DBG] raw json contains NO image_url at all");
+    }
+  }
   for (JsonObjectConst p : arr) {
     MaPlayer mp;
     mp.player_id = p["player_id"].as<String>();
