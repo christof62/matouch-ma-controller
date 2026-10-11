@@ -303,14 +303,39 @@ void setup() {
   // Never do blocking work (HTTP!) there - only set flags; the loop()
   // performs the fetch + redraw.
   ma.begin(ma_host, ma_port, ma_token, []() {
-    markDirty();
-    artworkFetchPending = true;
+    // redraw only when something VISIBLE of the active player changed
+    // (state, volume, track) - otherwise suppress redundant redraws
+    static String lastState = "";
+    static int lastVol = -1;
+    static String lastUri = "";
+    bool changed = false;
+    if (!ma.players.empty()) {
+      MaPlayer &p = ma.players[ma.activePlayerIndex];
+      if (p.state != lastState || p.volume_level != lastVol ||
+          p.current_uri != lastUri) {
+        lastState = p.state;
+        lastVol = p.volume_level;
+        lastUri = p.current_uri;
+        changed = true;
+      }
+    }
+    if (changed) markDirty();
+    artworkFetchPending = true;  // fetch is cheap when the key matches
   });
+  static uint32_t lastPlayersRedraw = 0;
   ma.setPlayersLoadedCallback([]() {
+    int prevIndex = ma.activePlayerIndex;
     restoreSelectedPlayer();
     // adopt the active player's current volume so turning starts from there
     if (!ma.players.empty()) {
-      volumeTarget = ma.players[ma.activePlayerIndex].volume_level;
+      MaPlayer &p = ma.players[ma.activePlayerIndex];
+      volumeTarget = p.volume_level;
+      // redraw at most once per second: the periodic refresh triggers this
+      // callback even when nothing visible changed (suppress flicker)
+      if (millis() - lastPlayersRedraw > 1000) {
+        lastPlayersRedraw = millis();
+        markDirty();
+      }
     }
   });
 
@@ -551,24 +576,27 @@ static int jpegDrawCallback(JPEGDRAW *pDraw) {
 void fetchArtwork() {
   if (ma.players.empty()) return;
   MaPlayer &p = ma.players[ma.activePlayerIndex];
+
+  // track identity = player + media uri. MA resolves artwork/palette
+  // ASYNCHRONOUSLY after a track change, so intermediate player updates
+  // carry an EMPTY image_url for the SAME track. Only a real track change
+  // (new uri) may invalidate the cover; a missing url for a known track
+  // keeps the last cover until the url arrives.
+  static String lastTrackKey = "";
+  String trackKey = p.player_id + "|" + p.current_uri;
+
   if (p.artwork_url.length() == 0) {
-    Serial.printf("[ART] no artwork_url for %s (title: %s)\n",
-                  p.name.c_str(), p.current_title.c_str());
-    // a track without artwork must clear the PREVIOUS cover:
-    // drop the buffer so the player screen falls back to text mode
-    String key = p.player_id + "|";
-    if (artworkLoadedFor != key) {
-      artworkLoadedFor = key;
-      artworkBufValid = false;
-      if (marqueeOffset >= 0) {  // stop a running marquee
-        marqueeOffset = -1;
-        marqueeNextStart = millis() + MARQUEE_INTERVAL_MS;
-      }
-      markDirty();  // redraw without artwork
+    // no url (yet): only act on a REAL track change to a cover-less track
+    if (trackKey != lastTrackKey && trackKey.length() > p.player_id.length() + 1) {
+      // genuine new track without any artwork yet: remember it and wait -
+      // do NOT drop the previous cover; if the url arrives later it will be
+      // fetched, if the track truly has no art the next track change resets.
+      lastTrackKey = trackKey;
     }
-    return;
+    return;  // keep the current cover, nothing to do
   }
-  // already loaded for this player+url?
+
+  // we have a url: fetch it if it is not already loaded
   String key = p.player_id + "|" + p.artwork_url;
   if (artworkLoadedFor == key) return;
 
@@ -594,6 +622,7 @@ void fetchArtwork() {
         }
         artworkJpegLen = read;
         artworkLoadedFor = key;
+        lastTrackKey = trackKey;
         Serial.printf("[ART] loaded %d bytes for %s\n", (int)read, p.name.c_str());
         if (decodeArtworkToBuffer()) {
           // redraw only the player screen with the new cover

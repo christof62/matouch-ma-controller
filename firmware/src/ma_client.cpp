@@ -329,6 +329,7 @@ void MusicAssistantClient::parsePlayersJson(const char *json, size_t len) {
       mp.current_artist = cm["artist"] | "";
       mp.current_album = cm["album"] | "";
       // DEBUG: dump the raw current_media of the first player that has one
+      mp.current_uri = cm["uri"] | "";
       static bool cmDumped = false;
       if (!cmDumped) {
         cmDumped = true;
@@ -599,6 +600,7 @@ void MusicAssistantClient::parsePlayer(JsonObjectConst p, bool replaceAll) {
         mp.current_title = cm["title"] | "";
         mp.current_artist = cm["artist"] | "";
         mp.current_album = cm["album"] | "";
+        mp.current_uri = cm["uri"] | mp.current_uri;
         // MA 2.11 sends the cover as simple "image_url" string
         const char *u = cm["image_url"] | (const char *)nullptr;
         if (u) mp.artwork_url = String(u);

@@ -18,6 +18,7 @@ struct MaPlayer {
   String current_title;
   String current_artist;
   String current_album;
+  String current_uri;    // uri of current_media: identifies the track
   String artwork_url;
   uint32_t elapsed_seconds = 0;
   uint32_t total_seconds = 0;
