@@ -519,10 +519,11 @@ bool drawArtwork() {
     return false;
   }
   jpeg.setPixelType(RGB565_LITTLE_ENDIAN);  // matches draw16bitRGBBitmap
-  // JPEGDEC scale is power-of-two only: pick the largest size that fits 150px
+  // JPEGDEC scale is power-of-two only: pick the largest size that fits ~130px.
+  // For a 512px cover this yields 128px - fills the circle inside the outer ring.
   int scale = 0;
-  while ((jpeg.getWidth() >> (scale + 1)) >= 150 &&
-         (jpeg.getHeight() >> (scale + 1)) >= 150) scale++;
+  while ((jpeg.getWidth() >> (scale + 1)) >= 130 &&
+         (jpeg.getHeight() >> (scale + 1)) >= 130) scale++;
   int w = jpeg.getWidth() >> scale;
   int h = jpeg.getHeight() >> scale;
 
