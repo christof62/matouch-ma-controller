@@ -463,8 +463,8 @@ void handleInput() {
 // Album artwork (JPEG via HTTP, decoded with JPEGDEC into the center)
 // ------------------------------------------------------------------
 static int jpegDrawCallback(JPEGDRAW *pDraw) {
-  gfx->draw16bitBeRGBBitmap(pDraw->x, pDraw->y, pDraw->pPixels,
-                            pDraw->iWidth, pDraw->iHeight);
+  gfx->draw16bitRGBBitmap(pDraw->x, pDraw->y, pDraw->pPixels,
+                          pDraw->iWidth, pDraw->iHeight);
   return 1;
 }
 
@@ -517,10 +517,10 @@ bool drawArtwork() {
     Serial.println("[ART] openRAM failed");
     return false;
   }
-  // scale to fit a 100x100 area in the display center
+  jpeg.setPixelType(RGB565_LITTLE_ENDIAN);  // matches draw16bitRGBBitmap
+  // scale to fit max 90x90 (round display: corners get clipped above that)
   int scale = 0;
-  while ((jpeg.getWidth() >> (scale + 1)) >= 100 &&
-         (jpeg.getHeight() >> (scale + 1)) >= 100) scale++;
+  while ((jpeg.getWidth() >> scale) > 90 || (jpeg.getHeight() >> scale) > 90) scale++;
   int w = jpeg.getWidth() >> scale;
   int h = jpeg.getHeight() >> scale;
   int x = 120 - w / 2;
