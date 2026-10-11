@@ -76,8 +76,10 @@ extern bool artworkBufValid;
 extern uint16_t *artworkBuf;
 #define MARQUEE_INTERVAL_MS 30000UL  // start a run every 30s
 #define MARQUEE_SPEED_MS 80UL        // pixel step time
-#define MARQUEE_BAND_Y 109           // band top: centered (22px band)
-#define MARQUEE_BAND_H 22            // visible glyph height (~21px) + 1
+#define MARQUEE_BAND_X 13            // rect band fully inside the circle
+#define MARQUEE_BAND_Y 108           // band top (25px tall, centered)
+#define MARQUEE_BAND_W 214           // fits the circle at every band row
+#define MARQUEE_BAND_H 25            // full glyph cell (24px) + 1: no bleed
 #define COL_MARQUEE_BG RGB565(0x30, 0x30, 0x30)  // dark grey backing band
 #define MARQUEE_TEXT_SIZE 3         // extra large font (24px)
 #define MARQUEE_MAX_LEN 64
@@ -110,48 +112,27 @@ void fetchArtwork();
 bool drawArtwork();
 bool decodeArtworkToBuffer();
 
-// draw one frame of the marquee at the current offset (clipped to the band)
-// The band lives strictly INSIDE the cover circle (r=108 around 120,120):
-// each row clears/draws only the width the circle allows at that height,
-// so no ring pixels are touched and no leftovers remain at the sides.
+// draw one frame of the marquee: rectangular band fully inside the cover
+// circle. Glyphs (opaque, 24px cell) are drawn ONCE per frame and fit
+// entirely within the 25px band - no bleed, no leftovers. Characters that
+// straddle the band edges are skipped (they pop in/out cleanly) - the only
+// safe option because print() cannot clip partial glyphs.
 void drawMarqueeFrame() {
-  if (marqueeOffset < 0) return;  // idle: nothing to draw at all
-  const int ccx = 120, ccy = 120, cr = 108;  // cover circle geometry
+  if (marqueeOffset < 0) return;
+  // grey band covers the previous frame completely
+  gfx->fillRect(MARQUEE_BAND_X, MARQUEE_BAND_Y, MARQUEE_BAND_W,
+                MARQUEE_BAND_H, COL_MARQUEE_BG);
   gfx->setTextSize(MARQUEE_TEXT_SIZE);
-  // opaque text: each glyph draws its own background -> no flicker,
-  // the previous frame's pixels are overpainted by the glyphs themselves
-  gfx->setTextColor(COL_FG, COL_MARQUEE_BG);
-  int x = -marqueeOffset;  // text x in screen coords
-
-  for (int row = 0; row < MARQUEE_BAND_H; row++) {
-    int y = MARQUEE_BAND_Y + row;
-    int dy = y - ccy;
-    int dyr = cr * cr - dy * dy;
-    if (dyr <= 0) continue;              // row outside the circle: nothing
-    int halfW = (int)sqrtf((float)dyr);
-    int rowX0 = ccx - halfW;
-    int rowW = 2 * halfW;
-    // text rows: draw all chars overlapping the row, then clear the edges
-    // (a partially visible char right of the clip would leave pixels, so we
-    //  grey out the gap between the last glyph and the row edge explicitly)
-    if (row >= 1 && row < MARQUEE_BAND_H - 1) {
-      int lastGlyphEnd = rowX0;
-      for (int i = 0; i < marqueeText.length(); i++) {
-        int cxPos = x + i * 18;
-        if (cxPos + 18 <= rowX0) continue;          // fully left of the row
-        if (cxPos >= rowX0 + rowW) break;           // fully right: done
-        char c[2] = { marqueeText[i], '\0' };
-        gfx->setCursor(cxPos, MARQUEE_BAND_Y + 1);
-        gfx->print(c);                              // opaque glyph
-        lastGlyphEnd = cxPos + 18;
-      }
-      // clear remaining pixels of this row (left gap + right gap)
-      if (lastGlyphEnd < rowX0 + rowW)
-        gfx->fillRect(lastGlyphEnd, y, rowX0 + rowW - lastGlyphEnd, 1, COL_MARQUEE_BG);
-    } else {
-      // 1px edge rows above/below the text: plain grey band
-      gfx->fillRect(rowX0, y, rowW, 1, COL_MARQUEE_BG);
-    }
+  gfx->setTextColor(COL_FG, COL_MARQUEE_BG);  // opaque glyphs
+  int x = MARQUEE_BAND_X - marqueeOffset;
+  int right = MARQUEE_BAND_X + MARQUEE_BAND_W;
+  for (int i = 0; i < marqueeText.length(); i++) {
+    int cxPos = x + i * 18;
+    if (cxPos + 18 <= MARQUEE_BAND_X) continue;  // fully out (left)
+    if (cxPos < MARQUEE_BAND_X) continue;         // straddles left: skip
+    if (cxPos + 18 > right) break;                 // straddles/further right: done
+    gfx->setCursor(cxPos, MARQUEE_BAND_Y);
+    gfx->print(marqueeText[i]);
   }
 }
 
@@ -352,24 +333,13 @@ void loop() {
       if (marqueeText.length() && millis() >= marqueeNextStart) {
         marqueeOffset = 0;
         marqueeLastStep = millis();
-        // fill the band area once with the grey backing color (circle-clipped)
-        const int ccx = 120, ccy = 120, cr = 108;
-        for (int row = 0; row < MARQUEE_BAND_H; row++) {
-          int y = MARQUEE_BAND_Y + row;
-          int dy = y - ccy;
-          int dyr = cr * cr - dy * dy;
-          if (dyr <= 0) continue;
-          int halfW = (int)sqrtf((float)dyr);
-          gfx->fillRect(ccx - halfW, y, 2 * halfW, 1, COL_MARQUEE_BG);
-        }
-        drawMarqueeFrame();
+        drawMarqueeFrame();  // fills the band + draws the first frame
       }
     } else if (millis() - marqueeLastStep >= MARQUEE_SPEED_MS) {
       marqueeLastStep = millis();
       marqueeOffset += 4;  // 4px per step
       int textW = marqueeText.length() * 18;
-      int bandW = 216;
-      if (marqueeOffset > textW + bandW) {
+      if (marqueeOffset > textW) {
         // run finished: erase the band fully (BLACK), then the player
         // redraw re-blits the cover -> nothing of the band remains
         marqueeOffset = -1;
