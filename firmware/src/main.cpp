@@ -75,12 +75,15 @@ void restoreSelectedPlayer();
 void markDirty() { uiDirty = true; }
 void drawVolumeOverlay();
 void fetchArtwork();
-bool drawArtwork();  // returns true when artwork is on screen
+bool drawArtwork();          // returns true when artwork is on screen
+bool decodeArtworkToBuffer();  // decode jpeg into the circular buffer (once)
 
 JPEGDEC jpeg;
 uint8_t *artworkJpeg = nullptr;
 size_t artworkJpegLen = 0;
 String artworkLoadedFor = "";
+uint16_t *artworkBuf = nullptr;   // decoded, circular-clipped RGB565 (128x128)
+bool artworkBufValid = false;
 bool takeDirty() {
   if (uiDirty) { uiDirty = false; return true; }
   return false;
@@ -462,9 +465,21 @@ void handleInput() {
 // ------------------------------------------------------------------
 // Album artwork (JPEG via HTTP, decoded with JPEGDEC into the center)
 // ------------------------------------------------------------------
+// decode into an offscreen buffer (128x128), then apply a circular clip
+#define ART_SIZE 128
+static uint16_t artDecodeBuf[ART_SIZE * ART_SIZE];
+
 static int jpegDrawCallback(JPEGDRAW *pDraw) {
-  gfx->draw16bitRGBBitmap(pDraw->x, pDraw->y, pDraw->pPixels,
-                          pDraw->iWidth, pDraw->iHeight);
+  // copy the decoded MCU block into the offscreen buffer
+  for (int y = 0; y < pDraw->iHeight; y++) {
+    int dy = pDraw->y + y;
+    if (dy < 0 || dy >= ART_SIZE) continue;
+    for (int x = 0; x < pDraw->iWidth; x++) {
+      int dx = pDraw->x + x;
+      if (dx < 0 || dx >= ART_SIZE) continue;
+      artDecodeBuf[dy * ART_SIZE + dx] = pDraw->pPixels[y * pDraw->iWidth + x];
+    }
+  }
   return 1;
 }
 
@@ -503,6 +518,7 @@ void fetchArtwork() {
         artworkJpegLen = read;
         artworkLoadedFor = key;
         Serial.printf("[ART] loaded %d bytes for %s\n", (int)read, p.name.c_str());
+        decodeArtworkToBuffer();  // decode ONCE here, not on every redraw
         markDirty();  // redraw the player screen with the new artwork
       }
     }
@@ -513,29 +529,51 @@ void fetchArtwork() {
 }
 
 bool drawArtwork() {
+  if (!artworkBufValid) return false;
+  int x0 = (SCREEN_W - ART_SIZE) / 2;
+  int y0 = (SCREEN_H - ART_SIZE) / 2;
+  int cx = ART_SIZE / 2, cy = ART_SIZE / 2;
+  int r2 = cx * cx;  // circle radius = half size
+  for (int y = 0; y < ART_SIZE; y++) {
+    for (int x = 0; x < ART_SIZE; x++) {
+      int dx = x - cx, dy = y - cy;
+      if (dx * dx + dy * dy <= r2) {
+        gfx->drawPixel(x0 + x, y0 + y, artworkBuf[y * ART_SIZE + x]);
+      }
+    }
+  }
+  return true;
+}
+
+bool decodeArtworkToBuffer() {
   if (!artworkJpeg || artworkJpegLen == 0) return false;
   if (jpeg.openRAM(artworkJpeg, artworkJpegLen, jpegDrawCallback) != 1) {
     Serial.println("[ART] openRAM failed");
     return false;
   }
-  jpeg.setPixelType(RGB565_LITTLE_ENDIAN);  // matches draw16bitRGBBitmap
-  // JPEGDEC scale is power-of-two only: pick the largest size that fits ~130px.
-  // For a 512px cover this yields 128px - fills the circle inside the outer ring.
+  jpeg.setPixelType(RGB565_LITTLE_ENDIAN);
+  // scale: power of two, target <= 128px
   int scale = 0;
-  while ((jpeg.getWidth() >> (scale + 1)) >= 130 &&
-         (jpeg.getHeight() >> (scale + 1)) >= 130) scale++;
+  while ((jpeg.getWidth() >> (scale + 1)) >= ART_SIZE &&
+         (jpeg.getHeight() >> (scale + 1)) >= ART_SIZE) scale++;
   int w = jpeg.getWidth() >> scale;
   int h = jpeg.getHeight() >> scale;
-
-  // center the image in the middle of the round display
-  int x = (SCREEN_W - w) / 2;
-  int y = (SCREEN_H - h) / 2;
-  Serial.printf("[ART] src %dx%d -> drawing %dx%d at (%d,%d) scale 1/%d\n",
-                jpeg.getWidth(), jpeg.getHeight(), w, h, x, y, 1 << scale);
-  if (jpeg.decode(x, y, scale) != 1) {
+  // center the scaled image in the 128x128 buffer
+  int x0 = (ART_SIZE - w) / 2;
+  int y0 = (ART_SIZE - h) / 2;
+  Serial.printf("[ART] src %dx%d -> buf %dx%d at (%d,%d) scale 1/%d\n",
+                jpeg.getWidth(), jpeg.getHeight(), w, h, x0, y0, 1 << scale);
+  // zero the buffer first (transparent background for the clip)
+  memset(artDecodeBuf, 0, sizeof(artDecodeBuf));
+  if (jpeg.decode(x0, y0, scale) != 1) {
     Serial.println("[ART] decode failed");
     return false;
   }
+  // copy into the persistent buffer
+  if (!artworkBuf) artworkBuf = (uint16_t *)malloc(sizeof(artDecodeBuf));
+  if (!artworkBuf) return false;
+  memcpy(artworkBuf, artDecodeBuf, sizeof(artDecodeBuf));
+  artworkBufValid = true;
   return true;
 }
 
