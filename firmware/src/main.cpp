@@ -466,7 +466,8 @@ void handleInput() {
 // Album artwork (JPEG via HTTP, decoded with JPEGDEC into the center)
 // ------------------------------------------------------------------
 // decode into an offscreen buffer (128x128), then apply a circular clip
-#define ART_SIZE 128
+#define ART_SIZE 160  // circular artwork diameter: fills the inner area
+                       // up to the volume ring (ring inner edge ~r108)
 static uint16_t artDecodeBuf[ART_SIZE * ART_SIZE];
 
 static int jpegDrawCallback(JPEGDRAW *pDraw) {
@@ -552,7 +553,7 @@ bool decodeArtworkToBuffer() {
     return false;
   }
   jpeg.setPixelType(RGB565_LITTLE_ENDIAN);
-  // scale: power of two, target <= 128px
+  // scale: power of two, target <= ART_SIZE
   int scale = 0;
   while ((jpeg.getWidth() >> (scale + 1)) >= ART_SIZE &&
          (jpeg.getHeight() >> (scale + 1)) >= ART_SIZE) scale++;
