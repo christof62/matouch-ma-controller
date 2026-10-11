@@ -131,6 +131,9 @@ void drawMarqueeFrame() {
     if (cxPos + 18 <= MARQUEE_BAND_X) continue;  // fully out (left)
     if (cxPos < MARQUEE_BAND_X) continue;         // straddles left: skip
     if (cxPos + 18 > right) break;                 // straddles/further right: done
+    // hard safety: never let a glyph start beyond the screen area,
+    // GFX would wrap it to the next line otherwise
+    if (cxPos < 0 || cxPos + 18 > SCREEN_W) continue;
     gfx->setCursor(cxPos, MARQUEE_BAND_Y);
     gfx->print(marqueeText[i]);
   }
