@@ -298,7 +298,13 @@ void setup() {
   drawMessage("Connecting MA...");
 
   ma.begin(ma_host, ma_port, ma_token, []() { markDirty(); });
-  ma.setPlayersLoadedCallback([]() { restoreSelectedPlayer(); });
+  ma.setPlayersLoadedCallback([]() {
+    restoreSelectedPlayer();
+    // adopt the active player's current volume so turning starts from there
+    if (!ma.players.empty()) {
+      volumeTarget = ma.players[ma.activePlayerIndex].volume_level;
+    }
+  });
 
 }
 
@@ -461,6 +467,8 @@ void handleInput() {
         break;
       case SCR_PLAYERLIST:
         screen = SCR_PLAYER;
+        if (!ma.players.empty())
+          volumeTarget = ma.players[ma.activePlayerIndex].volume_level;
         markDirty();
         break;
 
@@ -796,7 +804,7 @@ void updateVolumeScreen(bool force) {
 
 void drawVolumeOverlay() {
   // arc ring on the very outer edge, on top of the player view
-  drawVolumeArc(120, 120, 117, volumeTarget, 8, COL_ACCENT, COL_RING_OFF);
+  drawVolumeArc(120, 120, 117, volumeTarget, 6, COL_ACCENT, COL_RING_OFF);
 
   // semi-cover the center for the number
   gfx->fillCircle(120, 120, 55, BLACK);
