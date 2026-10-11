@@ -924,14 +924,20 @@ void drawPlayerScreen() {
                       artworkUriFor == p.current_uri;
   bool hasArt = artIsCurrent ? drawArtwork() : false;
 
-  // keep the marquee in sync with the CURRENT track in BOTH modes:
-  // without this the ticker kept showing the previous title while the
-  // screen already displayed the new one (text mode while waiting for
-  // the cover image). Updated here on every player screen redraw.
-  marqueeText = utf8ToAscii(p.current_title.substring(0, 28)) + "  -  " +
-                utf8ToAscii(p.current_artist.substring(0, 28));
-
-  if (!hasArt) {
+  // keep the marquee in sync with the CURRENT track: without this the
+  // ticker kept showing the previous title while the screen already
+  // displayed the new one (text mode while waiting for the cover image).
+  // Text mode (no cover yet) clears the ticker instead: the static
+  // title/artist rows overlap the marquee band, so running the ticker
+  // there would stamp over them every 30s.
+  if (hasArt) {
+    marqueeText = utf8ToAscii(p.current_title.substring(0, 28)) + "  -  " +
+                  utf8ToAscii(p.current_artist.substring(0, 28));
+  } else {
+    // stop an in-flight run: the band must not stamp over the static
+    // text rows below, and no stale run may continue on top of them
+    marqueeText = "";
+    marqueeOffset = -1;
     // no cover: bigger title + artist text
     gfx->setTextSize(2);
     gfx->setTextColor(COL_FG);
